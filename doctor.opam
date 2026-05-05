@@ -1,7 +1,7 @@
 opam-version: "2.0"
 synopsis: "Diagnostic CLI for OCaml development environments"
 description: """
-ocaml-doctor checks common OCaml development environment problems, including
+doctor checks common OCaml development environment problems, including
 opam setup, active switches, dune, ocaml-lsp-server, ocamlformat, PATH issues,
 and editor integration hints.
 """
@@ -17,10 +17,10 @@ tags: [
   "lsp"
   "windows"
 ]
-homepage: "https://github.com/funwithcthulhu/ocaml-doctor"
-doc: "https://github.com/funwithcthulhu/ocaml-doctor#readme"
-bug-reports: "https://github.com/funwithcthulhu/ocaml-doctor/issues"
-dev-repo: "git+https://github.com/funwithcthulhu/ocaml-doctor.git"
+homepage: "https://github.com/funwithcthulhu/doctor"
+doc: "https://github.com/funwithcthulhu/doctor#readme"
+bug-reports: "https://github.com/funwithcthulhu/doctor/issues"
+dev-repo: "git+https://github.com/funwithcthulhu/doctor.git"
 depends: [
   "ocaml" {>= "5.1"}
   "dune" {>= "3.11"}

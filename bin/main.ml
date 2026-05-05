@@ -1,25 +1,24 @@
-let version = Ocaml_doctor.Version.current
+let version = Doctor.Version.current
 
 let run_checks () =
   try
-    let run = Ocaml_doctor.Process.run in
-    let os = Ocaml_doctor.Platform.detect ~run () in
+    let run = Doctor.Process.run in
+    let os = Doctor.Platform.detect ~run () in
     let diagnostics =
-      [ Ocaml_doctor.Platform.diagnostic os ]
-      @ Ocaml_doctor.Check.command_diagnostics ~run
-      @ Ocaml_doctor.Opam.diagnostics ~run os
-      @ Ocaml_doctor.Editor.diagnostics ~run
+      [ Doctor.Platform.diagnostic os ]
+      @ Doctor.Check.command_diagnostics ~run
+      @ Doctor.Opam.diagnostics ~run os
+      @ Doctor.Editor.diagnostics ~run
     in
-    print_string (Ocaml_doctor.Report.render diagnostics);
-    Ocaml_doctor.Report.exit_code diagnostics
+    print_string (Doctor.Report.render diagnostics);
+    Doctor.Report.exit_code diagnostics
   with
   | exn ->
-      prerr_endline
-        ("ocaml-doctor internal failure: " ^ Printexc.to_string exn);
+      prerr_endline ("doctor internal failure: " ^ Printexc.to_string exn);
       3
 
 let print_version () =
-  print_endline Ocaml_doctor.Version.display;
+  print_endline Doctor.Version.display;
   0
 
 open Cmdliner
@@ -41,7 +40,7 @@ let check_cmd =
     Term.(const run_checks $ const ())
 
 let version_cmd =
-  let doc = "Print the ocaml-doctor version." in
+  let doc = "Print the doctor version." in
   Cmd.v (Cmd.info "version" ~doc) Term.(const print_version $ const ())
 
 let default_cmd =
@@ -52,12 +51,12 @@ let default_cmd =
     [
       `S Manpage.s_description;
       `P
-        "ocaml-doctor checks for common OCaml, opam, dune, LSP, formatter, \
+        "doctor checks for common OCaml, opam, dune, LSP, formatter, \
          shell environment, and VS Code setup issues. It does not modify your \
          machine.";
     ]
   in
-  Cmd.group (Cmd.info "ocaml-doctor" ~version ~doc ~man ~exits:exit_infos)
+  Cmd.group (Cmd.info "doctor" ~version ~doc ~man ~exits:exit_infos)
     [ check_cmd; version_cmd ]
 
 let () =

@@ -54,8 +54,8 @@ let unix_status_to_status = function
   | WSTOPPED signal -> Stopped signal
 
 let run command args =
-  let stdout_path = Filename.temp_file "ocaml-doctor-" ".stdout" in
-  let stderr_path = Filename.temp_file "ocaml-doctor-" ".stderr" in
+  let stdout_path = Filename.temp_file "doctor-" ".stdout" in
+  let stderr_path = Filename.temp_file "doctor-" ".stderr" in
   let stdin_fd = Unix.openfile null_device [ Unix.O_RDONLY ] 0 in
   let stdout_fd =
     Unix.openfile stdout_path

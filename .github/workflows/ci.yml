@@ -31,4 +31,4 @@ jobs:
         run: opam exec -- dune runtest
 
       - name: Lint opam metadata
-        run: opam lint ocaml-doctor.opam
+        run: opam lint doctor.opam

@@ -1,9 +1,9 @@
-# ocaml-doctor
+# doctor
 
-[![CI](https://github.com/funwithcthulhu/ocaml-doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/funwithcthulhu/ocaml-doctor/actions/workflows/ci.yml)
-[![license](https://img.shields.io/github/license/funwithcthulhu/ocaml-doctor.svg)](LICENSE)
+[![CI](https://github.com/funwithcthulhu/doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/funwithcthulhu/doctor/actions/workflows/ci.yml)
+[![license](https://img.shields.io/github/license/funwithcthulhu/doctor.svg)](LICENSE)
 
-`ocaml-doctor` is a small diagnostic CLI for OCaml development environments.
+`doctor` is a small diagnostic CLI for OCaml development environments.
 
 Status: early `0.1.0` tool, intended to be useful and conservative rather than
 complete.
@@ -34,8 +34,8 @@ complete.
 ## Installation From Source
 
 ```console
-git clone https://github.com/funwithcthulhu/ocaml-doctor
-cd ocaml-doctor
+git clone https://github.com/funwithcthulhu/doctor
+cd doctor
 opam install . --deps-only --with-test
 dune build
 dune runtest
@@ -47,42 +47,42 @@ If your shell has not been synced with the active opam switch, use
 ## Local Install
 
 ```console
-opam pin add ocaml-doctor . -y
+opam pin add doctor . -y
 ```
 
-Before the repository has its first commit, opam may try to fetch
-`git+file://...#main` and fail. For pre-commit local testing only, use:
+When testing uncommitted local changes, prefer a path pin so opam reads the
+working tree instead of `git+file://...#main`:
 
 ```console
-opam pin add ocaml-doctor . -y --kind=path
+opam pin add doctor . -y --kind=path
 ```
 
 After publication to opam-repository, the expected user flow is:
 
 ```console
 opam update
-opam install ocaml-doctor
-ocaml-doctor check
+opam install doctor
+doctor check
 ```
 
 ## Usage
 
 ```console
-ocaml-doctor check
-ocaml-doctor version
-ocaml-doctor --help
+doctor check
+doctor version
+doctor --help
 ```
 
-`ocaml-doctor version` prints:
+`doctor version` prints:
 
 ```console
-ocaml-doctor 0.1.0
+doctor 0.1.0
 ```
 
 ## Example Output
 
 ```console
-$ ocaml-doctor check
+$ doctor check
 OCaml Doctor
 
 [OK] platform detected: macOS
@@ -123,7 +123,7 @@ dune runtest
 Run locally without installing:
 
 ```console
-dune exec ocaml-doctor -- check
+dune exec doctor -- check
 ```
 
 If `dune` is not available on `PATH`, prefix these commands with

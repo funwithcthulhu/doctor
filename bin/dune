@@ -1,5 +1,4 @@
 (executable
  (name main)
- (public_name ocaml-doctor)
- (libraries ocaml_doctor cmdliner))
-
+ (public_name doctor)
+ (libraries doctor cmdliner))

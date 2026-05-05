@@ -1,7 +1,6 @@
 # Release Process
 
-This document is for maintainers preparing an `ocaml-doctor` release for
-opam-repository.
+This document is for maintainers preparing a `doctor` release for opam-repository.
 
 ## Checklist
 
@@ -16,10 +15,10 @@ dune build
 dune runtest
 
 # 3. Test local install.
-opam pin add ocaml-doctor . -y
-ocaml-doctor check
-ocaml-doctor version
-opam remove ocaml-doctor
+opam pin add doctor . -y
+doctor check
+doctor version
+opam remove doctor
 
 # 4. Commit.
 git status
@@ -37,9 +36,9 @@ opam publish
 
 # 7. After the opam-repository PR is merged.
 opam update
-opam install ocaml-doctor
-ocaml-doctor check
-ocaml-doctor version
+opam install doctor
+doctor check
+doctor version
 ```
 
 For the `0.1.0` release, the maintainer email is the GitHub noreply address

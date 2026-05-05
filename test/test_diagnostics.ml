@@ -1,8 +1,8 @@
-module Check = Ocaml_doctor.Check
-module Editor = Ocaml_doctor.Editor
-module Opam = Ocaml_doctor.Opam
-module Platform = Ocaml_doctor.Platform
-module Process = Ocaml_doctor.Process
+module Check = Doctor.Check
+module Editor = Doctor.Editor
+module Opam = Doctor.Opam
+module Platform = Doctor.Platform
+module Process = Doctor.Process
 
 let result ?(stdout = "") ?(stderr = "") status command args =
   { Process.command; args; status; stdout; stderr }
