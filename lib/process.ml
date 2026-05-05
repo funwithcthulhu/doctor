@@ -20,8 +20,12 @@ let status_to_string = function
   | Stopped signal -> Printf.sprintf "stopped by signal %d" signal
   | Spawn_error message -> Printf.sprintf "spawn error: %s" message
 
+let is_whitespace = function
+  | ' ' | '\t' | '\n' | '\r' | '\012' -> true
+  | _ -> false
+
 let quote_for_display value =
-  if value = "" || String.exists Char.Ascii.is_white value then
+  if value = "" || String.exists is_whitespace value then
     Printf.sprintf "%S" value
   else value
 
@@ -121,4 +125,3 @@ let summary result =
       Printf.sprintf "%s returned %s: %s / %s"
         (command_line result.command result.args)
         status stdout stderr
-

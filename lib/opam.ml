@@ -23,7 +23,7 @@ let parse_switch_list output =
 
 let words line =
   line
-  |> String.map (fun c -> if Char.Ascii.is_white c then ' ' else c)
+  |> String.map (fun c -> if Process.is_whitespace c then ' ' else c)
   |> String.split_on_char ' '
   |> List.filter (fun word -> word <> "")
 
