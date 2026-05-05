@@ -5,7 +5,7 @@ ocaml-doctor checks common OCaml development environment problems, including
 opam setup, active switches, dune, ocaml-lsp-server, ocamlformat, PATH issues,
 and editor integration hints.
 """
-maintainer: "Thomas B. <replace-with-email@example.com>"
+maintainer: "Thomas B. <29905917+funwithcthulhu@users.noreply.github.com>"
 authors: "Thomas B."
 license: "MIT"
 tags: [

@@ -8,7 +8,7 @@
 
 (authors "Thomas B.")
 (license MIT)
-(maintainers "Thomas B. <replace-with-email@example.com>")
+(maintainers "Thomas B. <29905917+funwithcthulhu@users.noreply.github.com>")
 
 (package
  (name ocaml-doctor)

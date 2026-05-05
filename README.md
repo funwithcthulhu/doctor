@@ -140,39 +140,34 @@ specific shell setup.
 
 ## Release Checklist
 
-TODO: Replace the placeholder maintainer email in `ocaml-doctor.opam` and
-`dune-project` before publishing.
-
 ```console
-# 1. Replace placeholder email in ocaml-doctor.opam or dune-project.
-
-# 2. Build and test.
+# 1. Build and test.
 opam install . --deps-only --with-test
 dune build
 dune runtest
 opam lint
 
-# 3. Test local install.
+# 2. Test local install.
 opam pin add ocaml-doctor . -y
 ocaml-doctor check
 ocaml-doctor version
 opam remove ocaml-doctor
 
-# 4. Commit.
+# 3. Commit.
 git status
 git add .
 git commit -m "Prepare 0.1.0 release"
 
-# 5. Tag.
+# 4. Tag.
 git tag -a 0.1.0 -m "Release 0.1.0"
 git push origin main
 git push origin 0.1.0
 
-# 6. Publish.
+# 5. Publish.
 opam install opam-publish
 opam publish
 
-# 7. After opam-repository PR is merged.
+# 6. After opam-repository PR is merged.
 opam update
 opam install ocaml-doctor
 ocaml-doctor check
