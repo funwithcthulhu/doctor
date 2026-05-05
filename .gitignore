@@ -1,0 +1,9 @@
+/_build/
+/_opam/
+*.install
+*.merlin
+*.opam.locked
+.opam-switch/
+.DS_Store
+*~
+\#*\#
