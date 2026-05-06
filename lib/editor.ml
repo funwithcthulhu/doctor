@@ -1,5 +1,7 @@
 let has_extension extensions extension =
-  extensions |> String.split_on_char '\n' |> List.map String.trim
+  extensions
+  |> String.split_on_char '\n'
+  |> List.map String.trim
   |> List.exists (String.equal extension)
 
 let diagnostics ~(run : Process.runner) =
@@ -14,10 +16,12 @@ let diagnostics ~(run : Process.runner) =
       let extensions = run "code" [ "--list-extensions" ] in
       match extensions.status with
       | Process.Exited 0
-        when has_extension extensions.stdout "ocamllabs.ocaml-platform" ->
+        when has_extension extensions.stdout "ocamllabs.ocaml-platform"
+        ->
           [
             Check.make ~id:"editor.vscode.ocaml-platform"
-              ~title:"VS Code OCaml Platform extension detected" Check.Ok;
+              ~title:"VS Code OCaml Platform extension detected"
+              Check.Ok;
           ]
       | Process.Exited 0 ->
           [
@@ -33,8 +37,8 @@ let diagnostics ~(run : Process.runner) =
               ~title:"could not list VS Code extensions"
               ~detail:(Process.summary extensions)
               ~suggestion:
-                "Open VS Code and check whether ocamllabs.ocaml-platform is \
-                 installed."
+                "Open VS Code and check whether \
+                 ocamllabs.ocaml-platform is installed."
               Check.Warn;
           ])
   | _ ->

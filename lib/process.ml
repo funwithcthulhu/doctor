@@ -77,7 +77,8 @@ let run command args =
     let argv = Array.of_list (command :: args) in
     let env = Unix.environment () in
     let pid =
-      Unix.create_process_env command argv env stdin_fd stdout_fd stderr_fd
+      Unix.create_process_env command argv env stdin_fd stdout_fd
+        stderr_fd
     in
     close_noerr stdin_fd;
     close_noerr stdout_fd;
@@ -87,16 +88,25 @@ let run command args =
     let stderr = read_file stderr_path in
     remove_if_exists stdout_path;
     remove_if_exists stderr_path;
-    { command; args; status = unix_status_to_status status; stdout; stderr }
+    {
+      command;
+      args;
+      status = unix_status_to_status status;
+      stdout;
+      stderr;
+    }
   with Unix.Unix_error (error, function_name, argument) ->
     let message =
-      Printf.sprintf "%s: %s %s" (Unix.error_message error) function_name
-        argument
+      Printf.sprintf "%s: %s %s"
+        (Unix.error_message error)
+        function_name argument
     in
     finish (Spawn_error message)
 
 let trim_for_summary text =
-  text |> String.split_on_char '\n' |> List.map String.trim
+  text
+  |> String.split_on_char '\n'
+  |> List.map String.trim
   |> List.filter (fun line -> line <> "")
   |> String.concat " "
 

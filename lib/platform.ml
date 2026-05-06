@@ -23,7 +23,8 @@ let file_contains path needle =
         let rec loop () =
           match input_line channel with
           | line ->
-              contains_substring (String.lowercase_ascii line) needle || loop ()
+              contains_substring (String.lowercase_ascii line) needle
+              || loop ()
           | exception End_of_file -> false
         in
         loop ())
@@ -70,18 +71,21 @@ let unix_like_shell = function
 let environment_sync_suggestion os =
   if unix_like_shell os then "eval $(opam env)"
   else
-    "Run `opam env` and apply the environment changes in your current shell, \
-     then restart the terminal if needed."
+    "Run `opam env` and apply the environment changes in your current \
+     shell, then restart the terminal if needed."
 
 let normalize_path path =
-  let path = String.trim path |> String.map (function '\\' -> '/' | c -> c) in
+  let path =
+    String.trim path |> String.map (function '\\' -> '/' | c -> c)
+  in
   if Sys.win32 then String.lowercase_ascii path else path
 
 let is_path_under ~parent path =
   let parent = normalize_path parent in
   let path = normalize_path path in
   let parent =
-    if parent <> "" && parent.[String.length parent - 1] = '/' then parent
+    if parent <> "" && parent.[String.length parent - 1] = '/' then
+      parent
     else parent ^ "/"
   in
   String.length path >= String.length parent

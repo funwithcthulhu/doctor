@@ -29,7 +29,9 @@ let exit_infos =
     Cmd.Exit.info ~doc:"one or more errors." 2;
     Cmd.Exit.info ~doc:"unexpected internal failure." 3;
   ]
-  @ List.filter (fun info -> Cmd.Exit.info_code info <> 0) Cmd.Exit.defaults
+  @ List.filter
+      (fun info -> Cmd.Exit.info_code info <> 0)
+      Cmd.Exit.defaults
 
 let check_cmd =
   let doc = "Run OCaml development environment diagnostics." in
@@ -43,15 +45,16 @@ let version_cmd =
 
 let default_cmd =
   let doc =
-    "Inspect an OCaml development environment and print actionable diagnostics."
+    "Inspect an OCaml development environment and print actionable \
+     diagnostics."
   in
   let man =
     [
       `S Manpage.s_description;
       `P
-        "doctor checks for common OCaml, opam, dune, LSP, formatter, shell \
-         environment, and VS Code setup issues. It does not modify your \
-         machine.";
+        "doctor checks for common OCaml, opam, dune, LSP, formatter, \
+         shell environment, and VS Code setup issues. It does not \
+         modify your machine.";
     ]
   in
   Cmd.group
