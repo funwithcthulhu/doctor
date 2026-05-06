@@ -1,46 +1,61 @@
 # Release Process
 
-This document is for maintainers preparing a `doctor` release for opam-repository.
+Notes for publishing `doctor` to opam-repository.
 
-## Checklist
+Run these from a clean checkout. Replace `0.1.0` with the version being
+released.
+
+## Prepare
+
+Update the version in the package metadata, README examples, and changelog.
+Confirm that the source archive URL in `doctor.opam` points at the tag you plan
+to publish.
 
 ```console
-# 1. Confirm release metadata.
-git status
-opam lint
-
-# 2. Build and test.
+git status --short
+opam lint doctor.opam
 opam install . --deps-only --with-test
-dune build
-dune runtest
+opam exec -- dune build
+opam exec -- dune runtest
+```
 
-# 3. Test local install.
-opam pin add doctor . -y
+Check the installed command before tagging:
+
+```console
+opam pin add doctor . -y --kind=path
 doctor check
 doctor version
-opam remove doctor
+opam pin remove doctor -y
+```
 
-# 4. Commit.
-git status
-git add .
+## Tag
+
+```console
+git status --short
+git add dune-project doctor.opam README.md CHANGES.md RELEASE.md
 git commit -m "Prepare 0.1.0 release"
-
-# 5. Tag.
 git tag -a 0.1.0 -m "Release 0.1.0"
 git push origin main
 git push origin 0.1.0
-
-# 6. Publish.
-opam install opam-publish
-opam publish
-
-# 7. After the opam-repository PR is merged.
-opam update
-opam install doctor
-doctor check
-doctor version
 ```
 
-For the `0.1.0` release, the maintainer email is the GitHub noreply address
-used in the package metadata. Update it only if you intentionally want a
-different public maintainer address in opam.
+## Publish
+
+```console
+opam install opam-publish
+opam publish
+```
+
+After the opam-repository PR is merged:
+
+```console
+opam update
+opam info doctor
+opam install doctor
+doctor version
+doctor check
+```
+
+The package metadata currently uses the maintainer's GitHub noreply address.
+Change it only when you intentionally want a different public maintainer address
+on opam.

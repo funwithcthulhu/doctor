@@ -4,66 +4,35 @@
 [![opam](https://badgen.net/opam/v/doctor)](https://opam.ocaml.org/packages/doctor/)
 [![license](https://img.shields.io/github/license/funwithcthulhu/doctor.svg)](LICENSE)
 
-`doctor` is a small diagnostic CLI for OCaml development environments.
+`doctor` checks a local OCaml development environment and reports common setup
+problems. It is read-only: it prints diagnostics and suggested commands, but it
+does not modify opam switches, shell files, or editor settings.
 
-Status: early `0.1.0` tool, intended to be useful and conservative rather than
-complete.
+It currently checks platform details, core tool versions, opam initialization
+state, active and available switches, whether the resolved `ocaml` appears to
+match the active switch, selected opam packages, and the VS Code OCaml Platform
+extension when `code` is available.
 
-## What It Checks
+## Installation
 
-- Platform detection for Windows, macOS, Linux, and WSL where reasonably
-  detectable.
-- Core tool availability and versions for `opam`, `ocaml`, `dune`, OCaml LSP
-  (`ocaml-lsp-server` or `ocamllsp`), and `ocamlformat`.
-- Whether opam appears initialized.
-- Active and available opam switches.
-- Heuristic shell environment sync by comparing the resolved `ocaml` command
-  with the active opam switch `bin` directory where possible.
-- Installed opam packages for `dune`, `ocaml-lsp-server`, `ocamlformat`, and
-  optional `utop`.
-- VS Code OCaml Platform extension detection when the `code` command is
-  available.
+```console
+opam update
+opam install doctor
+```
 
-## What It Does Not Do
-
-- It does not replace opam, dune, ocaml-lsp, or editor setup docs.
-- It does not run `opam init`, `opam switch create`, or `opam install` for you.
-- It does not edit shell startup files or modify user shell configuration.
-- It does not implement destructive auto-fixes.
-- It does not claim to diagnose every possible OCaml setup issue.
-
-## Installation From Source
+To build from a checkout:
 
 ```console
 git clone https://github.com/funwithcthulhu/doctor
 cd doctor
 opam install . --deps-only --with-test
-dune build
-dune runtest
+opam exec -- dune build
 ```
 
-If your shell has not been synced with the active opam switch, use
-`opam exec -- dune build` and `opam exec -- dune runtest`.
-
-## Local Install
-
-```console
-opam pin add doctor . -y
-```
-
-When testing uncommitted local changes, prefer a path pin so opam reads the
-working tree instead of `git+file://...#main`:
+For local testing through opam, use a path pin:
 
 ```console
 opam pin add doctor . -y --kind=path
-```
-
-After publication to opam-repository, the expected user flow is:
-
-```console
-opam update
-opam install doctor
-doctor check
 ```
 
 ## Usage
@@ -74,13 +43,7 @@ doctor version
 doctor --help
 ```
 
-`doctor version` prints:
-
-```console
-doctor 0.1.0
-```
-
-## Example Output
+`doctor check` prints a text report:
 
 ```console
 $ doctor check
@@ -100,6 +63,12 @@ OCaml Doctor
 Summary: 6 OK, 2 WARN, 0 ERROR
 ```
 
+`doctor version` prints:
+
+```console
+doctor 0.1.0
+```
+
 ## Exit Codes
 
 - `0`: no warnings or errors
@@ -109,39 +78,15 @@ Summary: 6 OK, 2 WARN, 0 ERROR
 
 ## Development
 
-Build:
-
 ```console
-dune build
+opam install . --deps-only --with-test
+opam exec -- dune build
+opam exec -- dune runtest
+opam exec -- dune exec doctor -- check
 ```
 
-Run tests:
+Tests use injected process runners and deterministic fixtures. They do not
+require opam to be initialized on the host machine, and they do not require VS
+Code or a particular shell setup.
 
-```console
-dune runtest
-```
-
-Run locally without installing:
-
-```console
-dune exec doctor -- check
-```
-
-If `dune` is not available on `PATH`, prefix these commands with
-`opam exec --`.
-
-Tests use injectable process runners and deterministic fixtures. They should
-not require the local machine to have opam configured, VS Code installed, or a
-specific shell setup.
-
-## Contribution Ideas
-
-- Improve shell detection for PowerShell, cmd.exe, MSYS2, and Cygwin.
-- Add JSON output for editor integrations and issue templates.
-- Add more editor checks without making VS Code mandatory.
-- Improve opam switch environment explanations on Windows.
-- Add targeted diagnostics for common dune and LSP project-layout problems.
-
-## Release Process
-
-Maintainer release steps are documented in [RELEASE.md](RELEASE.md).
+Maintainer release notes are in [RELEASE.md](RELEASE.md).

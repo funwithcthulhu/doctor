@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.1.0 - unreleased
+## 0.1.0 - 2026-05-06
 
-- Initial public release.
-- Add `doctor check`.
-- Add diagnostics for common OCaml/opam/dune/editor setup issues.
-- Add stable text report and documented exit codes.
+- Initial opam release.
+- Add `doctor check` with diagnostics for common OCaml, opam, dune, LSP,
+  formatter, PATH, and editor setup issues.
+- Document the text report and exit codes.
