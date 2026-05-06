@@ -1,8 +1,6 @@
 let version = Doctor.Version.current
 
-type output_format =
-  | Text
-  | Json
+type output_format = Text | Json
 
 let render_diagnostics format diagnostics =
   match format with
@@ -21,10 +19,9 @@ let run_checks output_format =
     in
     print_string (render_diagnostics output_format diagnostics);
     Doctor.Report.exit_code diagnostics
-  with
-  | exn ->
-      prerr_endline ("doctor internal failure: " ^ Printexc.to_string exn);
-      3
+  with exn ->
+    prerr_endline ("doctor internal failure: " ^ Printexc.to_string exn);
+    3
 
 let print_version () =
   print_endline Doctor.Version.display;
@@ -46,13 +43,12 @@ let exit_infos =
     Cmd.Exit.info ~doc:"one or more errors." 2;
     Cmd.Exit.info ~doc:"unexpected internal failure." 3;
   ]
-  @ List.filter
-      (fun info -> Cmd.Exit.info_code info <> 0)
-      Cmd.Exit.defaults
+  @ List.filter (fun info -> Cmd.Exit.info_code info <> 0) Cmd.Exit.defaults
 
 let check_cmd =
   let doc = "Run OCaml development environment diagnostics." in
-  Cmd.v (Cmd.info "check" ~doc ~exits:exit_infos)
+  Cmd.v
+    (Cmd.info "check" ~doc ~exits:exit_infos)
     Term.(const run_checks $ output_format)
 
 let version_cmd =
@@ -67,12 +63,13 @@ let default_cmd =
     [
       `S Manpage.s_description;
       `P
-        "doctor checks for common OCaml, opam, dune, LSP, formatter, \
-         shell environment, and VS Code setup issues. It does not modify your \
+        "doctor checks for common OCaml, opam, dune, LSP, formatter, shell \
+         environment, and VS Code setup issues. It does not modify your \
          machine.";
     ]
   in
-  Cmd.group (Cmd.info "doctor" ~version ~doc ~man ~exits:exit_infos)
+  Cmd.group
+    (Cmd.info "doctor" ~version ~doc ~man ~exits:exit_infos)
     [ check_cmd; version_cmd ]
 
 let () =

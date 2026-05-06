@@ -1,7 +1,4 @@
-type severity =
-  | Ok
-  | Warn
-  | Error
+type severity = Ok | Warn | Error
 
 type diagnostic = {
   id : string;
@@ -31,15 +28,10 @@ let aggregate diagnostics =
     Ok diagnostics
 
 let exit_code diagnostics =
-  match aggregate diagnostics with
-  | Ok -> 0
-  | Warn -> 1
-  | Error -> 2
+  match aggregate diagnostics with Ok -> 0 | Warn -> 1 | Error -> 2
 
 let clean_output output =
-  output
-  |> String.split_on_char '\n'
-  |> List.map String.trim
+  output |> String.split_on_char '\n' |> List.map String.trim
   |> List.filter (fun line -> line <> "")
 
 let first_output_line (result : Process.result) =
@@ -84,14 +76,16 @@ let command_diagnostic ~(run : Process.runner) spec =
       let title = title_with_version spec.label version in
       make ~id:("command." ^ spec.command) ~title Ok
   | Process.Spawn_error _ ->
-      make ~id:("command." ^ spec.command)
+      make
+        ~id:("command." ^ spec.command)
         ~title:(Printf.sprintf "%s not found" spec.label)
         ~detail:
-          (Printf.sprintf
-             "The `%s` command is not available on PATH." spec.command)
+          (Printf.sprintf "The `%s` command is not available on PATH."
+             spec.command)
         ~suggestion:spec.missing_suggestion spec.missing_severity
   | Exited _ | Signaled _ | Stopped _ ->
-      make ~id:("command." ^ spec.command)
+      make
+        ~id:("command." ^ spec.command)
         ~title:(Printf.sprintf "%s command failed" spec.label)
         ~detail:(Process.summary result) ~suggestion:spec.missing_suggestion
         spec.missing_severity
@@ -127,8 +121,8 @@ let lsp_command_diagnostic ~(run : Process.runner) =
             ~title:"OCaml LSP found, but its version could not be read"
             ~detail:(Process.summary fallback)
             ~suggestion:
-              "Try running `ocamllsp --version` directly, or reinstall it \
-               with opam."
+              "Try running `ocamllsp --version` directly, or reinstall it with \
+               opam."
             Warn)
   | _ ->
       make ~id:"command.ocaml-lsp-server"
@@ -181,7 +175,4 @@ let ocamlformat_spec =
 
 let command_diagnostics ~run =
   List.map (command_diagnostic ~run) core_command_specs
-  @ [
-      lsp_command_diagnostic ~run;
-      command_diagnostic ~run ocamlformat_spec;
-    ]
+  @ [ lsp_command_diagnostic ~run; command_diagnostic ~run ocamlformat_spec ]

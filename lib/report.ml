@@ -1,24 +1,18 @@
-let indent_for status =
-  String.make (String.length status + 3) ' '
+let indent_for status = String.make (String.length status + 3) ' '
 
 let non_empty_lines text =
-  text
-  |> String.split_on_char '\n'
-  |> List.map String.trim
+  text |> String.split_on_char '\n' |> List.map String.trim
   |> List.filter (fun line -> line <> "")
 
 let format_extra_lines indent ~prefix text =
   match non_empty_lines text with
   | [] -> []
   | first :: rest ->
-      (indent ^ prefix ^ first)
-      :: List.map (fun line -> indent ^ line) rest
+      (indent ^ prefix ^ first) :: List.map (fun line -> indent ^ line) rest
 
 let format_diagnostic diagnostic =
   let status = Check.severity_to_string diagnostic.Check.severity in
-  let first_line =
-    Printf.sprintf "[%s] %s" status diagnostic.Check.title
-  in
+  let first_line = Printf.sprintf "[%s] %s" status diagnostic.Check.title in
   let indent = indent_for status in
   let detail_lines =
     match diagnostic.detail with
@@ -63,12 +57,8 @@ let json_escape text =
     text;
   Buffer.contents buffer
 
-let json_string text =
-  Printf.sprintf "\"%s\"" (json_escape text)
-
-let json_option = function
-  | Some value -> json_string value
-  | None -> "null"
+let json_string text = Printf.sprintf "\"%s\"" (json_escape text)
+let json_option = function Some value -> json_string value | None -> "null"
 
 let json_severity = function
   | Check.Ok -> "ok"
@@ -77,8 +67,7 @@ let json_severity = function
 
 let render_json_diagnostic diagnostic =
   let field ?(comma = true) name value =
-    Printf.sprintf "      \"%s\": %s%s" name value
-      (if comma then "," else "")
+    Printf.sprintf "      \"%s\": %s%s" name value (if comma then "," else "")
   in
   String.concat "\n"
     [

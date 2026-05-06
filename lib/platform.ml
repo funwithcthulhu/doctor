@@ -1,10 +1,4 @@
-type os =
-  | Windows
-  | Macos
-  | Linux
-  | Wsl
-  | Cygwin
-  | Other of string
+type os = Windows | Macos | Linux | Wsl | Cygwin | Other of string
 
 let env = Sys.getenv_opt
 
@@ -33,8 +27,7 @@ let file_contains path needle =
           | exception End_of_file -> false
         in
         loop ())
-  with
-  | Sys_error _ -> false
+  with Sys_error _ -> false
 
 let has_wsl_marker () =
   env "WSL_DISTRO_NAME" <> None
