@@ -75,20 +75,19 @@ let json_severity = function
   | Check.Warn -> "warn"
   | Check.Error -> "error"
 
-let json_field ?(comma = true) name value =
-  Printf.sprintf "      \"%s\": %s%s" name value
-    (if comma then "," else "")
-
 let render_json_diagnostic diagnostic =
+  let field ?(comma = true) name value =
+    Printf.sprintf "      \"%s\": %s%s" name value
+      (if comma then "," else "")
+  in
   String.concat "\n"
     [
       "    {";
-      json_field "id" (json_string diagnostic.Check.id);
-      json_field "severity" (json_string (json_severity diagnostic.severity));
-      json_field "title" (json_string diagnostic.title);
-      json_field "detail" (json_option diagnostic.detail);
-      json_field ~comma:false "suggestion"
-        (json_option diagnostic.suggestion);
+      field "id" (json_string diagnostic.Check.id);
+      field "severity" (json_string (json_severity diagnostic.severity));
+      field "title" (json_string diagnostic.title);
+      field "detail" (json_option diagnostic.detail);
+      field ~comma:false "suggestion" (json_option diagnostic.suggestion);
       "    }";
     ]
 

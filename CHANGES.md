@@ -2,7 +2,7 @@
 
 ## 0.2.0 - unreleased
 
-- Add `doctor check --format json` for tools that need structured output.
+- Add `doctor check --format json` for machine-readable diagnostics.
 
 ## 0.1.0 - 2026-05-06
 
