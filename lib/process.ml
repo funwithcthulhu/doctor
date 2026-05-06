@@ -40,12 +40,8 @@ let read_file path =
       let length = in_channel_length channel in
       really_input_string channel length)
 
-let remove_if_exists path =
-  try Sys.remove path with
-  | Sys_error _ -> ()
-
+let remove_if_exists path = try Sys.remove path with Sys_error _ -> ()
 let close_noerr fd = try Unix.close fd with Unix.Unix_error _ -> ()
-
 let null_device = if Sys.win32 then "NUL" else "/dev/null"
 
 let unix_status_to_status = function
@@ -92,18 +88,15 @@ let run command args =
     remove_if_exists stdout_path;
     remove_if_exists stderr_path;
     { command; args; status = unix_status_to_status status; stdout; stderr }
-  with
-  | Unix.Unix_error (error, function_name, argument) ->
-      let message =
-        Printf.sprintf "%s: %s %s" (Unix.error_message error) function_name
-          argument
-      in
-      finish (Spawn_error message)
+  with Unix.Unix_error (error, function_name, argument) ->
+    let message =
+      Printf.sprintf "%s: %s %s" (Unix.error_message error) function_name
+        argument
+    in
+    finish (Spawn_error message)
 
 let trim_for_summary text =
-  text
-  |> String.split_on_char '\n'
-  |> List.map String.trim
+  text |> String.split_on_char '\n' |> List.map String.trim
   |> List.filter (fun line -> line <> "")
   |> String.concat " "
 
@@ -112,7 +105,10 @@ let summary result =
   let stderr = trim_for_summary result.stderr in
   let stdout = trim_for_summary result.stdout in
   match (stdout, stderr) with
-  | "", "" -> Printf.sprintf "%s returned %s" (command_line result.command result.args) status
+  | "", "" ->
+      Printf.sprintf "%s returned %s"
+        (command_line result.command result.args)
+        status
   | "", stderr ->
       Printf.sprintf "%s returned %s: %s"
         (command_line result.command result.args)

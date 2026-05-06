@@ -14,8 +14,7 @@ let run responses command args =
 
 let expect_equal label expected actual =
   if not (String.equal expected actual) then
-    failwith
-      (Printf.sprintf "%s: expected %S, got %S" label expected actual)
+    failwith (Printf.sprintf "%s: expected %S, got %S" label expected actual)
 
 let expect_severity label expected actual =
   if expected <> actual then
@@ -34,12 +33,10 @@ let () =
   let command_responses =
     [
       (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
-      ( ( "ocaml",
-          [ "-version" ] ),
+      ( ("ocaml", [ "-version" ]),
         (Process.Exited 0, "The OCaml toplevel, version 5.2.0\n", "") );
       (("dune", [ "--version" ]), (Process.Exited 0, "3.17.0\n", ""));
-      ( ( "ocaml-lsp-server",
-          [ "--version" ] ),
+      ( ("ocaml-lsp-server", [ "--version" ]),
         (Process.Spawn_error "not found", "", "") );
       (("ocamllsp", [ "--version" ]), (Process.Exited 0, "1.26.0\n", ""));
       (("ocamlformat", [ "--version" ]), (Process.Exited 0, "0.27.0\n", ""));
@@ -70,9 +67,7 @@ let () =
       ~run:
         (run
            [
-             ( ( "opam",
-                 [ "--version" ] ),
-               (Process.Exited 2, "", "opam failed\n") );
+             (("opam", [ "--version" ]), (Process.Exited 2, "", "opam failed\n"));
            ])
       {
         command = "opam";
@@ -92,25 +87,17 @@ let () =
       (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
       (("opam", [ "var"; "root" ]), (Process.Exited 0, "/home/me/.opam\n", ""));
       (("opam", [ "switch"; "show" ]), (Process.Exited 0, "5.2.0\n", ""));
-      ( ( "opam",
-          [ "switch"; "list"; "--short" ] ),
+      ( ("opam", [ "switch"; "list"; "--short" ]),
         (Process.Exited 0, "default\n5.2.0\n", "") );
-      ( ( "opam",
-          [ "var"; "bin" ] ),
+      ( ("opam", [ "var"; "bin" ]),
         (Process.Exited 0, "/home/me/.opam/5.2.0/bin\n", "") );
-      ( ( "sh",
-          [ "-c"; "command -v ocaml" ] ),
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
         (Process.Exited 0, "/usr/bin/ocaml\n", "") );
-      ( ( "opam",
-          [ "list"; "--installed"; "--short" ] ),
-        ( Process.Exited 0,
-          "ocaml\ndune\nocaml-lsp-server\n",
-          "" ) );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        (Process.Exited 0, "ocaml\ndune\nocaml-lsp-server\n", "") );
     ]
   in
-  let diagnostics =
-    Opam.diagnostics ~run:(run opam_responses) Platform.Linux
-  in
+  let diagnostics = Opam.diagnostics ~run:(run opam_responses) Platform.Linux in
   let env = find_diagnostic "opam.env.sync" diagnostics in
   expect_severity "env sync warning" Check.Warn env.severity;
   expect_equal "env sync suggestion" "eval $(opam env)"
