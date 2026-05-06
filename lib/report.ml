@@ -45,6 +45,71 @@ let format_summary diagnostics =
   let ok, warn, error = counts diagnostics in
   Printf.sprintf "Summary: %d OK, %d WARN, %d ERROR" ok warn error
 
+let json_escape text =
+  let buffer = Buffer.create (String.length text) in
+  String.iter
+    (function
+      | '"' -> Buffer.add_string buffer "\\\""
+      | '\\' -> Buffer.add_string buffer "\\\\"
+      | '\b' -> Buffer.add_string buffer "\\b"
+      | '\012' -> Buffer.add_string buffer "\\f"
+      | '\n' -> Buffer.add_string buffer "\\n"
+      | '\r' -> Buffer.add_string buffer "\\r"
+      | '\t' -> Buffer.add_string buffer "\\t"
+      | char when Char.code char < 0x20 ->
+          Buffer.add_string buffer (Printf.sprintf "\\u%04x" (Char.code char))
+      | char -> Buffer.add_char buffer char)
+    text;
+  Buffer.contents buffer
+
+let json_string text =
+  Printf.sprintf "\"%s\"" (json_escape text)
+
+let json_option = function
+  | Some value -> json_string value
+  | None -> "null"
+
+let json_severity = function
+  | Check.Ok -> "ok"
+  | Check.Warn -> "warn"
+  | Check.Error -> "error"
+
+let render_json_diagnostic diagnostic =
+  String.concat "\n"
+    [
+      "    {";
+      Printf.sprintf "      \"id\": %s," (json_string diagnostic.Check.id);
+      Printf.sprintf "      \"severity\": %s,"
+        (json_string (json_severity diagnostic.severity));
+      Printf.sprintf "      \"title\": %s," (json_string diagnostic.title);
+      Printf.sprintf "      \"detail\": %s," (json_option diagnostic.detail);
+      Printf.sprintf "      \"suggestion\": %s"
+        (json_option diagnostic.suggestion);
+      "    }";
+    ]
+
+let render_json diagnostics =
+  let ok, warn, error = counts diagnostics in
+  let diagnostic_lines =
+    diagnostics |> List.map render_json_diagnostic |> String.concat ",\n"
+  in
+  let diagnostics_json =
+    match diagnostic_lines with
+    | "" -> "[]"
+    | _ -> "[\n" ^ diagnostic_lines ^ "\n  ]"
+  in
+  String.concat "\n"
+    [
+      "{";
+      Printf.sprintf "  \"diagnostics\": %s," diagnostics_json;
+      Printf.sprintf
+        "  \"summary\": { \"ok\": %d, \"warn\": %d, \"error\": %d }," ok warn
+        error;
+      Printf.sprintf "  \"exit_code\": %d" (Check.exit_code diagnostics);
+      "}";
+    ]
+  ^ "\n"
+
 let render diagnostics =
   let body =
     match diagnostics with

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0 - unreleased
+
+- Add `doctor check --format json` for tools that need structured output.
+
 ## 0.1.0 - unreleased
 
 - Initial public release.

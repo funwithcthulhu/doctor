@@ -69,6 +69,7 @@ doctor check
 
 ```console
 doctor check
+doctor check --format json
 doctor version
 doctor --help
 ```
@@ -97,6 +98,25 @@ OCaml Doctor
        Suggested fix: Install extension ocamllabs.ocaml-platform in VS Code.
 
 Summary: 6 OK, 2 WARN, 0 ERROR
+```
+
+For tools that need structured output, use JSON:
+
+```console
+$ doctor check --format json
+{
+  "diagnostics": [
+    {
+      "id": "platform.os",
+      "severity": "ok",
+      "title": "platform detected: macOS",
+      "detail": null,
+      "suggestion": null
+    }
+  ],
+  "summary": { "ok": 1, "warn": 0, "error": 0 },
+  "exit_code": 0
+}
 ```
 
 ## Exit Codes
@@ -136,7 +156,7 @@ specific shell setup.
 ## Contribution Ideas
 
 - Improve shell detection for PowerShell, cmd.exe, MSYS2, and Cygwin.
-- Add JSON output for editor integrations and issue templates.
+- Add more structured diagnostics for editor integrations and issue templates.
 - Add more editor checks without making VS Code mandatory.
 - Improve opam switch environment explanations on Windows.
 - Add targeted diagnostics for common dune and LSP project-layout problems.
