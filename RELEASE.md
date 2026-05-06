@@ -1,7 +1,7 @@
 # Release Process
 
-Notes for publishing `doctor` to opam-repository. This is a release checklist,
-not release automation.
+Notes for publishing `doctor` to opam-repository.
+This is a release checklist, not release automation.
 
 Run from a clean checkout. Replace `0.1.0` with the version being released.
 
@@ -30,8 +30,8 @@ opam pin remove doctor -y
 
 ## Tag
 
-Commit the release metadata, then create the tag. Push the branch and tag after
-checking the final diff.
+Commit the release metadata, then create the tag.
+Push the branch and tag after checking the final diff.
 
 ```console
 git status --short
@@ -40,9 +40,9 @@ git tag -a 0.1.0 -m "Release 0.1.0"
 
 ## Publish
 
-Before the first release, verify current `opam-publish` usage with the installed
-help or the current opam documentation. The tool is used to open the
-opam-repository pull request for the tagged release.
+Before the first release, verify current `opam-publish` usage with the installed help
+or the current opam documentation. The tool is used to open the opam-repository pull
+request for the tagged release.
 
 ```console
 opam install opam-publish
@@ -59,6 +59,5 @@ doctor version
 doctor check
 ```
 
-The package metadata currently uses the maintainer's GitHub noreply address.
-Change it only when you intentionally want a different public maintainer address
-on opam.
+The package metadata currently uses the maintainer's GitHub noreply address. Change
+it only when you intentionally want a different public maintainer address on opam.

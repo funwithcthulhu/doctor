@@ -7,9 +7,9 @@
 `doctor` is a read-only CLI for checking whether a local OCaml development
 environment looks usable.
 
-It reports missing core tools, opam initialization and switch state, likely
-shell environment mismatches, selected opam packages, and the VS Code OCaml
-Platform extension when the `code` command is available.
+It reports missing core tools, opam initialization and switch state, likely shell
+environment mismatches, selected opam packages, and the VS Code OCaml Platform
+extension when the `code` command is available.
 
 ## Installation
 
@@ -83,7 +83,7 @@ opam exec -- dune runtest
 opam exec -- dune exec doctor -- check
 ```
 
-Tests fake process execution, so they do not depend on the host opam setup, VS
-Code, or a particular shell.
+Tests fake process execution, so they do not depend on the host opam setup, VS Code,
+or a particular shell.
 
 Maintainer release notes are in [RELEASE.md](RELEASE.md).
