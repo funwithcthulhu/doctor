@@ -37,6 +37,7 @@ opam pin add doctor . -y --kind=path
 
 ```console
 doctor check
+doctor check --json
 doctor version
 doctor --help
 ```
@@ -59,6 +60,26 @@ OCaml Doctor
        Suggested fix: Install extension ocamllabs.ocaml-platform in VS Code.
 
 Summary: 6 OK, 2 WARN, 0 ERROR
+```
+
+Use `--json` when another program needs to read the report:
+
+```console
+$ doctor check --json
+{
+  "summary": {
+    "status": "warn",
+    "exit_code": 1
+  },
+  "diagnostics": [
+    {
+      "name": "command.ocamlformat",
+      "status": "warn",
+      "message": "ocamlformat not installed",
+      "details": ["Suggested fix: opam install ocamlformat"]
+    }
+  ]
+}
 ```
 
 `doctor version` prints:

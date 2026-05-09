@@ -1,6 +1,10 @@
 let version = Doctor.Version.current
 
-let run_checks () =
+let render_diagnostics ~json diagnostics =
+  if json then Doctor.Report.render_json diagnostics
+  else Doctor.Report.render diagnostics
+
+let run_checks json =
   try
     let run = Doctor.Process.run in
     let os = Doctor.Platform.detect ~run () in
@@ -10,7 +14,7 @@ let run_checks () =
       @ Doctor.Opam.diagnostics ~run os
       @ Doctor.Editor.diagnostics ~run
     in
-    print_string (Doctor.Report.render diagnostics);
+    print_string (render_diagnostics ~json diagnostics);
     Doctor.Report.exit_code diagnostics
   with exn ->
     prerr_endline ("doctor internal failure: " ^ Printexc.to_string exn);
@@ -21,6 +25,10 @@ let print_version () =
   0
 
 open Cmdliner
+
+let json_output =
+  let doc = "Print diagnostics as JSON." in
+  Arg.(value & flag & info [ "json" ] ~doc)
 
 let exit_infos =
   [
@@ -37,7 +45,7 @@ let check_cmd =
   let doc = "Run OCaml development environment diagnostics." in
   Cmd.v
     (Cmd.info "check" ~doc ~exits:exit_infos)
-    Term.(const run_checks $ const ())
+    Term.(const run_checks $ json_output)
 
 let version_cmd =
   let doc = "Print the doctor version." in
