@@ -71,32 +71,47 @@ let test_multiline_detail_and_suggestion_are_indented () =
   expect_line "multiline suggestion second" "       try again" rendered
 
 let test_json_report_contains_diagnostics_summary_and_exit_code () =
-  let json = Doctor.Report.render_json [ ok; warn; error ] in
-  expect_contains "json diagnostics" "\"diagnostics\": [" json;
-  expect_contains "json severity" "\"severity\": \"warn\"" json;
-  expect_contains "json summary"
-    "\"summary\": { \"ok\": 1, \"warn\": 1, \"error\": 1 }" json;
-  expect_contains "json exit code" "\"exit_code\": 2" json
+  let json =
+    Doctor.Report.render_json
+      [
+        ok;
+        Doctor.Check.make ~id:"command.ocamlformat"
+          ~title:"ocamlformat not installed"
+          ~detail:"The `ocamlformat` command is not available on PATH."
+          ~suggestion:"opam install ocamlformat" Doctor.Check.Warn;
+        error;
+      ]
+  in
+  expect_line "json status" "    \"status\": \"error\"," json;
+  expect_line "json exit code" "    \"exit_code\": 2" json;
+  expect_contains "json diagnostic name"
+    "\"name\": \"command.ocamlformat\"" json;
+  expect_contains "json diagnostic details"
+    "\"details\": [\"The `ocamlformat` command is not available on \
+     PATH.\", \"Suggested fix: opam install ocamlformat\"]"
+    json
 
 let test_json_escapes_strings () =
   let diagnostic =
-    diagnostic Doctor.Check.Warn "quoted \"title\""
+    diagnostic Doctor.Check.Warn "quoted \"message\""
       ~detail:"first line\nsecond line"
   in
   let json = Doctor.Report.render_json [ diagnostic ] in
-  expect_contains "json quotes" "\"title\": \"quoted \\\"title\\\"\""
-    json;
+  expect_contains "json quotes"
+    "\"message\": \"quoted \\\"message\\\"\"" json;
   expect_contains "json newline"
-    "\"detail\": \"first line\\nsecond line\"" json
+    "\"details\": [\"first line\", \"second line\"]" json
 
 let test_empty_json_report () =
   let expected =
     String.concat "\n"
       [
         "{";
-        "  \"diagnostics\": [],";
-        "  \"summary\": { \"ok\": 0, \"warn\": 0, \"error\": 0 },";
-        "  \"exit_code\": 0";
+        "  \"summary\": {";
+        "    \"status\": \"ok\",";
+        "    \"exit_code\": 0";
+        "  },";
+        "  \"diagnostics\": []";
         "}";
       ]
     ^ "\n"

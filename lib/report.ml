@@ -19,18 +19,17 @@ let format_diagnostic diagnostic =
     Printf.sprintf "[%s] %s" status diagnostic.Check.title
   in
   let indent = indent_for status in
-  let detail_lines =
-    match diagnostic.detail with
-    | Some detail -> format_extra_lines indent ~prefix:"" detail
-    | None -> []
-  in
-  let suggestion_lines =
+  let extra =
+    (match diagnostic.detail with
+      | Some detail -> format_extra_lines indent ~prefix:"" detail
+      | None -> [])
+    @
     match diagnostic.suggestion with
     | Some suggestion ->
         format_extra_lines indent ~prefix:"Suggested fix: " suggestion
     | None -> []
   in
-  String.concat "\n" ((first_line :: detail_lines) @ suggestion_lines)
+  String.concat "\n" (first_line :: extra)
 
 let counts diagnostics =
   List.fold_left
@@ -65,14 +64,32 @@ let json_escape text =
 
 let json_string text = Printf.sprintf "\"%s\"" (json_escape text)
 
-let json_option = function
-  | Some value -> json_string value
-  | None -> "null"
-
-let json_severity = function
+let json_status = function
   | Check.Ok -> "ok"
   | Check.Warn -> "warn"
   | Check.Error -> "error"
+
+let option_lines = function
+  | Some text -> non_empty_lines text
+  | None -> []
+
+let suggestion_lines = function
+  | Some text -> (
+      match non_empty_lines text with
+      | [] -> []
+      | first :: rest -> ("Suggested fix: " ^ first) :: rest)
+  | None -> []
+
+let diagnostic_details diagnostic =
+  option_lines diagnostic.Check.detail
+  @ suggestion_lines diagnostic.Check.suggestion
+
+let json_array values =
+  match values with
+  | [] -> "[]"
+  | _ ->
+      values |> List.map json_string |> String.concat ", "
+      |> Printf.sprintf "[%s]"
 
 let render_json_diagnostic diagnostic =
   let field ?(comma = true) name value =
@@ -82,17 +99,18 @@ let render_json_diagnostic diagnostic =
   String.concat "\n"
     [
       "    {";
-      field "id" (json_string diagnostic.Check.id);
-      field "severity" (json_string (json_severity diagnostic.severity));
-      field "title" (json_string diagnostic.title);
-      field "detail" (json_option diagnostic.detail);
-      field ~comma:false "suggestion"
-        (json_option diagnostic.suggestion);
+      field "name" (json_string diagnostic.Check.id);
+      field "status"
+        (json_string (json_status diagnostic.Check.severity));
+      field "message" (json_string diagnostic.Check.title);
+      field ~comma:false "details"
+        (json_array (diagnostic_details diagnostic));
       "    }";
     ]
 
 let render_json diagnostics =
-  let ok, warn, error = counts diagnostics in
+  let status = Check.aggregate diagnostics |> json_status in
+  let exit_code = Check.exit_code diagnostics in
   let diagnostic_lines =
     diagnostics
     |> List.map render_json_diagnostic
@@ -106,11 +124,11 @@ let render_json diagnostics =
   String.concat "\n"
     [
       "{";
-      Printf.sprintf "  \"diagnostics\": %s," diagnostics_json;
-      Printf.sprintf
-        "  \"summary\": { \"ok\": %d, \"warn\": %d, \"error\": %d }," ok
-        warn error;
-      Printf.sprintf "  \"exit_code\": %d" (Check.exit_code diagnostics);
+      "  \"summary\": {";
+      Printf.sprintf "    \"status\": %s," (json_string status);
+      Printf.sprintf "    \"exit_code\": %d" exit_code;
+      "  },";
+      Printf.sprintf "  \"diagnostics\": %s" diagnostics_json;
       "}";
     ]
   ^ "\n"

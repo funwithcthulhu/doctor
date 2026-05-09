@@ -39,7 +39,7 @@ opam pin add doctor . -y --kind=path
 
 ```console
 doctor check
-doctor check --format json
+doctor check --json
 doctor version
 doctor --help
 ```
@@ -64,22 +64,23 @@ OCaml Doctor
 Summary: 6 OK, 2 WARN, 0 ERROR
 ```
 
-Use JSON when another program needs to read the report:
+Use `--json` when another program needs to read the report:
 
 ```console
-$ doctor check --format json
+$ doctor check --json
 {
+  "summary": {
+    "status": "warn",
+    "exit_code": 1
+  },
   "diagnostics": [
     {
-      "id": "platform.os",
-      "severity": "ok",
-      "title": "platform detected: macOS",
-      "detail": null,
-      "suggestion": null
+      "name": "command.ocamlformat",
+      "status": "warn",
+      "message": "ocamlformat not installed",
+      "details": ["Suggested fix: opam install ocamlformat"]
     }
-  ],
-  "summary": { "ok": 1, "warn": 0, "error": 0 },
-  "exit_code": 0
+  ]
 }
 ```
 

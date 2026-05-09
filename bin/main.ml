@@ -1,13 +1,10 @@
 let version = Doctor.Version.current
 
-type output_format = Text | Json
+let render_diagnostics ~json diagnostics =
+  if json then Doctor.Report.render_json diagnostics
+  else Doctor.Report.render diagnostics
 
-let render_diagnostics format diagnostics =
-  match format with
-  | Text -> Doctor.Report.render diagnostics
-  | Json -> Doctor.Report.render_json diagnostics
-
-let run_checks output_format =
+let run_checks json =
   try
     let run = Doctor.Process.run in
     let os = Doctor.Platform.detect ~run () in
@@ -17,7 +14,7 @@ let run_checks output_format =
       @ Doctor.Opam.diagnostics ~run os
       @ Doctor.Editor.diagnostics ~run
     in
-    print_string (render_diagnostics output_format diagnostics);
+    print_string (render_diagnostics ~json diagnostics);
     Doctor.Report.exit_code diagnostics
   with exn ->
     prerr_endline ("doctor internal failure: " ^ Printexc.to_string exn);
@@ -29,15 +26,9 @@ let print_version () =
 
 open Cmdliner
 
-let output_format =
-  let formats = [ ("text", Text); ("json", Json) ] in
-  let doc =
-    "Choose the output format. $(docv) must be $(b,text) or $(b,json)."
-  in
-  Arg.(
-    value
-    & opt (enum formats) Text
-    & info [ "format" ] ~docv:"FORMAT" ~doc)
+let json_output =
+  let doc = "Print diagnostics as JSON." in
+  Arg.(value & flag & info [ "json" ] ~doc)
 
 let exit_infos =
   [
@@ -54,7 +45,7 @@ let check_cmd =
   let doc = "Run OCaml development environment diagnostics." in
   Cmd.v
     (Cmd.info "check" ~doc ~exits:exit_infos)
-    Term.(const run_checks $ output_format)
+    Term.(const run_checks $ json_output)
 
 let version_cmd =
   let doc = "Print the doctor version." in
