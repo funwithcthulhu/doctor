@@ -2,14 +2,16 @@
 
 [![CI](https://github.com/funwithcthulhu/doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/funwithcthulhu/doctor/actions/workflows/ci.yml)
 [![opam](https://badgen.net/opam/v/doctor)](https://opam.ocaml.org/packages/doctor/)
-[![license](https://img.shields.io/github/license/funwithcthulhu/doctor.svg)](LICENSE)
+[![license](https://img.shields.io/github/license/funwithcthulhu/doctor)](LICENSE)
 
-`doctor` is a read-only CLI for checking whether a local OCaml development
-environment looks usable.
+`doctor` checks a local OCaml development environment. It reports missing tools,
+suspicious opam state, and editor setup issues; it does not modify switches,
+shell files, or editor settings.
 
-It reports missing core tools, opam initialization and switch state, likely shell
-environment mismatches, selected opam packages, and the VS Code OCaml Platform
-extension when the `code` command is available.
+It currently checks platform details, core tool versions, opam initialization
+state, active and available switches, whether the resolved `ocaml` appears to
+match the active switch, selected opam packages, and the VS Code OCaml Platform
+extension when `code` is available.
 
 ## Installation
 
