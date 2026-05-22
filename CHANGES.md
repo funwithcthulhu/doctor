@@ -1,9 +1,10 @@
 # Changelog
 
-## 0.2.0 - unreleased
+## 0.2.0 - 2026-05-21
 
 - Add `doctor check --json` for machine-readable diagnostics.
 - Tighten opam environment diagnostic tests and small parser helpers.
+- Fix the README license badge URL.
 
 ## 0.1.0 - 2026-05-06
 

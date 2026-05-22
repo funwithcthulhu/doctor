@@ -87,7 +87,7 @@ $ doctor check --json
 `doctor version` prints:
 
 ```console
-doctor 0.1.0
+doctor 0.2.0
 ```
 
 ## Exit Codes
