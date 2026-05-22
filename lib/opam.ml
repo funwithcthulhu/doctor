@@ -4,22 +4,33 @@ let non_empty_lines output =
   |> List.map String.trim
   |> List.filter (fun line -> line <> "")
 
+let first_stdout_line result =
+  match result.Process.status with
+  | Process.Exited 0 -> (
+      match non_empty_lines result.stdout with
+      | line :: _ -> Some line
+      | [] -> None)
+  | _ -> None
+
 let parse_active_switch output =
   match non_empty_lines output with
   | [] -> None
   | line :: _ ->
       let lower = String.lowercase_ascii line in
-      if String.length lower >= 7 && String.sub lower 0 7 = "[error]"
-      then None
+      if String.starts_with ~prefix:"[error]" lower then None
       else Some line
+
+let trim_switch_marker line =
+  let line = String.trim line in
+  match line with
+  | "" -> ""
+  | _ when line.[0] = '*' ->
+      String.trim (String.sub line 1 (String.length line - 1))
+  | _ -> line
 
 let parse_switch_list output =
   non_empty_lines output
-  |> List.map (fun line ->
-      let line = String.trim line in
-      if line <> "" && line.[0] = '*' then
-        String.trim (String.sub line 1 (String.length line - 1))
-      else line)
+  |> List.map trim_switch_marker
   |> List.filter (fun line -> line <> "")
 
 let words line =
@@ -41,16 +52,21 @@ let opam_available ~(run : Process.runner) =
   | Process.Exited 0 -> true
   | _ -> false
 
+let switch_suggestion os switches =
+  match switches with
+  | [] -> "opam switch create 5.2.0"
+  | _ :: _ -> Platform.environment_sync_suggestion os
+
 let initialized_diagnostic ~(run : Process.runner) =
   let result = run "opam" [ "var"; "root" ] in
   match result.status with
   | Process.Exited 0 -> (
-      match non_empty_lines result.stdout with
-      | root :: _ ->
+      match first_stdout_line result with
+      | Some root ->
           Check.make ~id:"opam.initialized" ~title:"opam initialized"
             ~detail:(Printf.sprintf "Root: %s" root)
             Check.Ok
-      | [] ->
+      | None ->
           Check.make ~id:"opam.initialized"
             ~title:"opam root could not be read"
             ~detail:(Process.summary result)
@@ -78,19 +94,13 @@ let switch_diagnostics ~(run : Process.runner) os =
               ~title:(Printf.sprintf "active switch: %s" active)
               Check.Ok
         | None ->
-            let suggestion =
-              if switch_list = [] then "opam switch create 5.2.0"
-              else Platform.environment_sync_suggestion os
-            in
+            let suggestion = switch_suggestion os switch_list in
             Check.make ~id:"opam.switch.active"
               ~title:"opam switch not active"
               ~detail:"opam did not report an active switch."
               ~suggestion Check.Error)
     | _ ->
-        let suggestion =
-          if switch_list = [] then "opam switch create 5.2.0"
-          else Platform.environment_sync_suggestion os
-        in
+        let suggestion = switch_suggestion os switch_list in
         Check.make ~id:"opam.switch.active"
           ~title:"opam switch not active" ~detail:(Process.summary show)
           ~suggestion Check.Error
@@ -116,47 +126,36 @@ let switch_diagnostics ~(run : Process.runner) os =
   in
   [ show_diagnostic; list_diagnostic ]
 
+let locate_ocaml ~(run : Process.runner) os =
+  let locator, args_for = Platform.command_locator os in
+  first_stdout_line (run locator (args_for "ocaml"))
+
 let switch_bin_diagnostic ~(run : Process.runner) os =
   let bin = run "opam" [ "var"; "bin" ] in
-  match bin.status with
-  | Process.Exited 0 -> (
-      match non_empty_lines bin.stdout with
-      | [] -> []
-      | switch_bin :: _ -> (
-          let locator, args_for = Platform.command_locator os in
-          let located = run locator (args_for "ocaml") in
-          let first_path =
-            match located.status with
-            | Process.Exited 0 -> (
-                match non_empty_lines located.stdout with
-                | path :: _ -> Some path
-                | [] -> None)
-            | _ -> None
-          in
-          match first_path with
-          | Some path
-            when Platform.is_path_under ~parent:switch_bin path ->
-              [
-                Check.make ~id:"opam.env.sync"
-                  ~title:"shell environment appears synced with opam"
-                  ~detail:(Printf.sprintf "ocaml resolves to %s" path)
-                  Check.Ok;
-              ]
-          | Some path ->
-              [
-                Check.make ~id:"opam.env.sync"
-                  ~title:
-                    "shell environment may be out of sync with opam"
-                  ~detail:
-                    (Printf.sprintf
-                       "ocaml resolves to %s, but the active switch \
-                        bin is %s."
-                       path switch_bin)
-                  ~suggestion:(Platform.environment_sync_suggestion os)
-                  Check.Warn;
-              ]
-          | None -> []))
-  | _ -> []
+  match first_stdout_line bin with
+  | None -> []
+  | Some switch_bin -> (
+      match locate_ocaml ~run os with
+      | Some path when Platform.is_path_under ~parent:switch_bin path ->
+          [
+            Check.make ~id:"opam.env.sync"
+              ~title:"shell environment appears synced with opam"
+              ~detail:(Printf.sprintf "ocaml resolves to %s" path)
+              Check.Ok;
+          ]
+      | Some path ->
+          [
+            Check.make ~id:"opam.env.sync"
+              ~title:"shell environment may be out of sync with opam"
+              ~detail:
+                (Printf.sprintf
+                   "ocaml resolves to %s, but the active switch bin is \
+                    %s."
+                   path switch_bin)
+              ~suggestion:(Platform.environment_sync_suggestion os)
+              Check.Warn;
+          ]
+      | None -> [])
 
 let package_diagnostic packages package ~optional =
   if has_package packages package then

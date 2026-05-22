@@ -1,6 +1,6 @@
 type os = Windows | Macos | Linux | Wsl | Cygwin | Other of string
 
-let env name = try Some (Sys.getenv name) with Not_found -> None
+let env = Sys.getenv_opt
 
 let contains_substring haystack needle =
   let haystack_length = String.length haystack in
@@ -84,9 +84,7 @@ let is_path_under ~parent path =
   let parent = normalize_path parent in
   let path = normalize_path path in
   let parent =
-    if parent <> "" && parent.[String.length parent - 1] = '/' then
-      parent
-    else parent ^ "/"
+    if String.ends_with ~suffix:"/" parent then parent else parent ^ "/"
   in
   String.length path >= String.length parent
   && String.sub path 0 (String.length parent) = parent

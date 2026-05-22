@@ -68,13 +68,14 @@ let title_with_version label version =
       Printf.sprintf "%s found: %s" label version
   | _ -> Printf.sprintf "%s found" label
 
+let command_version result parser =
+  result |> first_output_line |> Option.map parser
+
 let command_diagnostic ~(run : Process.runner) spec =
   let result = run spec.command spec.args in
   match result.status with
   | Process.Exited 0 ->
-      let version =
-        result |> first_output_line |> Option.map spec.version_parser
-      in
+      let version = command_version result spec.version_parser in
       let title = title_with_version spec.label version in
       make ~id:("command." ^ spec.command) ~title Ok
   | Process.Spawn_error _ ->
@@ -96,18 +97,14 @@ let lsp_command_diagnostic ~(run : Process.runner) =
   let primary = run "ocaml-lsp-server" [ "--version" ] in
   match primary.status with
   | Process.Exited 0 ->
-      let version =
-        primary |> first_output_line |> Option.map String.trim
-      in
+      let version = command_version primary String.trim in
       let title = title_with_version "OCaml LSP" version in
       make ~id:"command.ocaml-lsp-server" ~title Ok
   | Process.Spawn_error _ -> (
       let fallback = run "ocamllsp" [ "--version" ] in
       match fallback.status with
       | Process.Exited 0 ->
-          let version =
-            fallback |> first_output_line |> Option.map String.trim
-          in
+          let version = command_version fallback String.trim in
           let title =
             match version with
             | Some version when version <> "" ->
@@ -140,7 +137,7 @@ let lsp_command_diagnostic ~(run : Process.runner) =
            reinstall it with opam."
         Warn
 
-let command_diagnostics ~run =
+let core_command_specs =
   [
     {
       command = "opam";
@@ -170,18 +167,20 @@ let command_diagnostics ~run =
       version_parser = String.trim;
     };
   ]
-  |> List.map (command_diagnostic ~run)
-  |> fun diagnostics ->
-  diagnostics
+
+let ocamlformat_spec =
+  {
+    command = "ocamlformat";
+    args = [ "--version" ];
+    label = "ocamlformat";
+    missing_severity = Warn;
+    missing_suggestion = "opam install ocamlformat";
+    version_parser = String.trim;
+  }
+
+let command_diagnostics ~run =
+  List.map (command_diagnostic ~run) core_command_specs
   @ [
       lsp_command_diagnostic ~run;
-      command_diagnostic ~run
-        {
-          command = "ocamlformat";
-          args = [ "--version" ];
-          label = "ocamlformat";
-          missing_severity = Warn;
-          missing_suggestion = "opam install ocamlformat";
-          version_parser = String.trim;
-        };
+      command_diagnostic ~run ocamlformat_spec;
     ]

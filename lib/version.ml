@@ -1,2 +1,2 @@
-let current = "0.1.0"
+let current = "0.2.0"
 let display = "doctor " ^ current

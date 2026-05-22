@@ -84,17 +84,7 @@ let run command args =
     close_noerr stdout_fd;
     close_noerr stderr_fd;
     let _pid, status = Unix.waitpid [] pid in
-    let stdout = read_file stdout_path in
-    let stderr = read_file stderr_path in
-    remove_if_exists stdout_path;
-    remove_if_exists stderr_path;
-    {
-      command;
-      args;
-      status = unix_status_to_status status;
-      stdout;
-      stderr;
-    }
+    finish (unix_status_to_status status)
   with Unix.Unix_error (error, function_name, argument) ->
     let message =
       Printf.sprintf "%s: %s %s"
