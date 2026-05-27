@@ -33,6 +33,31 @@ let expect_contains label needle haystack =
   if not (contains_substring haystack needle) then
     failwith (Printf.sprintf "%s: missing substring %S" label needle)
 
+let read_file path =
+  let channel = open_in_bin path in
+  Fun.protect
+    ~finally:(fun () -> close_in_noerr channel)
+    (fun () ->
+      let length = in_channel_length channel in
+      really_input_string channel length)
+
+let normalize_newlines text =
+  text |> String.split_on_char '\r' |> String.concat ""
+
+let find_fixture name =
+  let candidates =
+    [
+      Filename.concat "fixtures" name;
+      Filename.concat (Filename.concat "test" "fixtures") name;
+    ]
+  in
+  match List.find_opt Sys.file_exists candidates with
+  | Some path -> path
+  | None -> failwith (Printf.sprintf "fixture %s not found" name)
+
+let read_fixture name =
+  read_file (find_fixture name) |> normalize_newlines
+
 let ok = diagnostic Doctor.Check.Ok "opam found: 2.2.1"
 
 let warn =
@@ -40,6 +65,34 @@ let warn =
     ~suggestion:"opam install ocamlformat"
 
 let error = diagnostic Doctor.Check.Error "opam switch not active"
+
+let golden_all_ok =
+  [
+    Doctor.Check.make ~id:"platform.os"
+      ~title:"platform detected: Linux" Doctor.Check.Ok;
+    Doctor.Check.make ~id:"command.opam" ~title:"opam found: 2.2.1"
+      Doctor.Check.Ok;
+  ]
+
+let golden_warn =
+  [
+    Doctor.Check.make ~id:"command.opam" ~title:"opam found: 2.2.1"
+      Doctor.Check.Ok;
+    Doctor.Check.make ~id:"command.ocamlformat"
+      ~title:"ocamlformat not installed"
+      ~detail:"The `ocamlformat` command is not available on PATH."
+      ~suggestion:"opam install ocamlformat" Doctor.Check.Warn;
+  ]
+
+let golden_error =
+  [
+    Doctor.Check.make ~id:"opam.switch.active"
+      ~title:"opam switch not active"
+      ~detail:
+        "opam switch show returned exit 1\n\
+         stderr: No switch is currently set"
+      ~suggestion:"eval $(opam env)" Doctor.Check.Error;
+  ]
 
 let test_exit_codes_and_counts () =
   expect_int "ok exit code" 0 (Doctor.Report.exit_code [ ok ]);
@@ -118,6 +171,17 @@ let test_empty_json_report () =
   in
   expect_string "empty json" expected (Doctor.Report.render_json [])
 
+let test_golden_text_reports () =
+  expect_string "all-ok golden report"
+    (read_fixture "report_all_ok.txt")
+    (Doctor.Report.render golden_all_ok);
+  expect_string "warn golden report"
+    (read_fixture "report_warn.txt")
+    (Doctor.Report.render golden_warn);
+  expect_string "error golden report"
+    (read_fixture "report_error.txt")
+    (Doctor.Report.render golden_error)
+
 let () =
   List.iter
     (fun test -> test ())
@@ -128,4 +192,5 @@ let () =
       test_json_report_contains_diagnostics_summary_and_exit_code;
       test_json_escapes_strings;
       test_empty_json_report;
+      test_golden_text_reports;
     ]

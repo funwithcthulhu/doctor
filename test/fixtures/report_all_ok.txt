@@ -1,0 +1,6 @@
+OCaml Doctor
+
+[OK] platform detected: Linux
+[OK] opam found: 2.2.1
+
+Summary: 2 OK, 0 WARN, 0 ERROR

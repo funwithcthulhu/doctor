@@ -1,0 +1,8 @@
+OCaml Doctor
+
+[OK] opam found: 2.2.1
+[WARN] ocamlformat not installed
+       The `ocamlformat` command is not available on PATH.
+       Suggested fix: opam install ocamlformat
+
+Summary: 1 OK, 1 WARN, 0 ERROR

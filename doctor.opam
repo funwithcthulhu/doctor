@@ -7,7 +7,7 @@ opam setup, active switches, dune, ocaml-lsp-server, ocamlformat, PATH issues,
 and editor integration hints.
 """
 
-maintainer: "Thomas B. <29905917+funwithcthulhu@users.noreply.github.com>"
+maintainer: "Thomas B. <funwithcthulhu29@gmail.com>"
 authors: "Thomas B."
 
 license: "MIT"

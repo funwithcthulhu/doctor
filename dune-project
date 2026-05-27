@@ -1,7 +1,7 @@
 (lang dune 3.11)
 
 (name doctor)
-(version 0.2.0)
+(version 0.3.0)
 
 (source
  (github funwithcthulhu/doctor))
@@ -9,7 +9,7 @@
 (authors "Thomas B.")
 (license MIT)
 
-(maintainers "Thomas B. <29905917+funwithcthulhu@users.noreply.github.com>")
+(maintainers "Thomas B. <funwithcthulhu29@gmail.com>")
 
 (package
  (name doctor)

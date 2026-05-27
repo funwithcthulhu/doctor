@@ -4,4 +4,4 @@ let expect_equal label expected actual =
       (Printf.sprintf "%s: expected %S, got %S" label expected actual)
 
 let () =
-  expect_equal "version display" "doctor 0.2.0" Doctor.Version.display
+  expect_equal "version display" "doctor 0.3.0" Doctor.Version.display

@@ -1,0 +1,8 @@
+OCaml Doctor
+
+[ERROR] opam switch not active
+        opam switch show returned exit 1
+        stderr: No switch is currently set
+        Suggested fix: eval $(opam env)
+
+Summary: 0 OK, 0 WARN, 1 ERROR

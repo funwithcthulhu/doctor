@@ -71,8 +71,9 @@ let unix_like_shell = function
 let environment_sync_suggestion os =
   if unix_like_shell os then "eval $(opam env)"
   else
-    "Run `opam env` and apply the environment changes in your current \
-     shell, then restart the terminal if needed."
+    "PowerShell: (& opam env) -split '\\r?\\n' | ForEach-Object { \
+     Invoke-Expression $_ }\n\
+     cmd.exe: for /f \"tokens=*\" %i in ('opam env') do @%i"
 
 let normalize_path path =
   let path =

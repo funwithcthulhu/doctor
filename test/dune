@@ -1,3 +1,5 @@
 (tests
  (names test_process test_report test_diagnostics test_cli)
- (libraries doctor))
+ (libraries doctor)
+ (deps
+  (source_tree fixtures)))

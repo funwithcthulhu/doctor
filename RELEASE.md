@@ -3,7 +3,7 @@
 Notes for publishing `doctor` to opam-repository.
 This is a release checklist, not release automation.
 
-Run from a clean checkout. Replace `0.2.0` with the version being released.
+Run from a clean checkout. Replace `VERSION` with the version being released.
 
 ## Prepare
 
@@ -22,9 +22,10 @@ dune runtest
 Smoke-test the installed command before tagging:
 
 ```console
-opam pin add doctor . -y --kind=path
+opam pin add doctor . -y --kind=path --with-version VERSION
 doctor version
 doctor check
+doctor check --json
 opam pin remove doctor -y
 ```
 
@@ -35,7 +36,7 @@ Push the branch and tag after checking the final diff.
 
 ```console
 git status --short
-git tag -a 0.2.0 -m "Release 0.2.0"
+git tag -a VERSION -m "Release VERSION"
 ```
 
 ## Publish
@@ -58,6 +59,3 @@ opam install doctor
 doctor version
 doctor check
 ```
-
-The package metadata currently uses the maintainer's GitHub noreply address. Change
-it only when you intentionally want a different public maintainer address on opam.

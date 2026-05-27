@@ -47,6 +47,14 @@ let parse_installed_packages output =
 let has_package packages package =
   List.exists (String.equal package) packages
 
+type package_state =
+  | Installed_packages of string list
+  | Package_query_failed of Process.result
+
+let installed_packages = function
+  | Installed_packages packages -> Some packages
+  | Package_query_failed _ -> None
+
 let opam_available ~(run : Process.runner) =
   match (run "opam" [ "--version" ]).status with
   | Process.Exited 0 -> true
@@ -126,36 +134,128 @@ let switch_diagnostics ~(run : Process.runner) os =
   in
   [ show_diagnostic; list_diagnostic ]
 
-let locate_ocaml ~(run : Process.runner) os =
+let locate_command ~(run : Process.runner) os command =
   let locator, args_for = Platform.command_locator os in
-  first_stdout_line (run locator (args_for "ocaml"))
+  first_stdout_line (run locator (args_for command))
 
-let switch_bin_diagnostic ~(run : Process.runner) os =
-  let bin = run "opam" [ "var"; "bin" ] in
-  match first_stdout_line bin with
+let locate_ocaml ~run os = locate_command ~run os "ocaml"
+
+type switch_tool = {
+  label : string;
+  commands : string list;
+  package : string option;
+}
+
+let switch_tools =
+  [
+    { label = "ocaml"; commands = [ "ocaml" ]; package = None };
+    { label = "dune"; commands = [ "dune" ]; package = Some "dune" };
+    {
+      label = "OCaml LSP";
+      commands = [ "ocaml-lsp-server"; "ocamllsp" ];
+      package = Some "ocaml-lsp-server";
+    };
+    {
+      label = "ocamlformat";
+      commands = [ "ocamlformat" ];
+      package = Some "ocamlformat";
+    };
+  ]
+
+let tool_expected packages tool =
+  match (tool.package, packages) with
+  | None, _ -> true
+  | Some package, Some packages -> has_package packages package
+  | Some _, None -> false
+
+let visible_tool_path ~(run : Process.runner) os tool =
+  List.find_map (locate_command ~run os) tool.commands
+
+let env_detail ~switch_bin ~missing ~outside =
+  let missing_lines =
+    match missing with
+    | [] -> []
+    | _ :: _ ->
+        [
+          Printf.sprintf "Commands missing from PATH: %s."
+            (String.concat ", " missing);
+        ]
+  in
+  let outside_lines =
+    match outside with
+    | [] -> []
+    | _ :: _ ->
+        "Commands resolving outside the active switch:"
+        :: List.map
+             (fun (label, path) -> Printf.sprintf "%s: %s" label path)
+             outside
+  in
+  String.concat "\n"
+    ((("Active switch bin: " ^ switch_bin) :: missing_lines)
+    @ outside_lines)
+
+let env_sync_diagnostic ~(run : Process.runner) os package_state =
+  let active_switch =
+    match run "opam" [ "switch"; "show" ] with
+    | { status = Process.Exited 0; stdout; _ } ->
+        parse_active_switch stdout
+    | _ -> None
+  in
+  match active_switch with
   | None -> []
-  | Some switch_bin -> (
-      match locate_ocaml ~run os with
-      | Some path when Platform.is_path_under ~parent:switch_bin path ->
+  | Some _ -> (
+      let bin = run "opam" [ "var"; "bin" ] in
+      match first_stdout_line bin with
+      | None ->
           [
             Check.make ~id:"opam.env.sync"
-              ~title:"shell environment appears synced with opam"
-              ~detail:(Printf.sprintf "ocaml resolves to %s" path)
-              Check.Ok;
-          ]
-      | Some path ->
-          [
-            Check.make ~id:"opam.env.sync"
-              ~title:"shell environment may be out of sync with opam"
-              ~detail:
-                (Printf.sprintf
-                   "ocaml resolves to %s, but the active switch bin is \
-                    %s."
-                   path switch_bin)
-              ~suggestion:(Platform.environment_sync_suggestion os)
+              ~title:"active switch bin could not be read"
+              ~detail:(Process.summary bin)
+              ~suggestion:
+                "Run `opam var bin` to inspect the active switch."
               Check.Warn;
           ]
-      | None -> [])
+      | Some switch_bin -> (
+          let expected_tools =
+            switch_tools
+            |> List.filter
+                 (tool_expected (installed_packages package_state))
+          in
+          let missing, outside =
+            List.fold_left
+              (fun (missing, outside) tool ->
+                match visible_tool_path ~run os tool with
+                | None -> (tool.label :: missing, outside)
+                | Some path
+                  when Platform.is_path_under ~parent:switch_bin path ->
+                    (missing, outside)
+                | Some path -> (missing, (tool.label, path) :: outside))
+              ([], []) expected_tools
+          in
+          match (List.rev missing, List.rev outside) with
+          | [], [] ->
+              let detail =
+                match locate_ocaml ~run os with
+                | Some path ->
+                    Printf.sprintf "ocaml resolves to %s" path
+                | None ->
+                    Printf.sprintf "Active switch bin: %s" switch_bin
+              in
+              [
+                Check.make ~id:"opam.env.sync"
+                  ~title:"shell environment appears synced with opam"
+                  ~detail Check.Ok;
+              ]
+          | missing, outside ->
+              [
+                Check.make ~id:"opam.env.sync"
+                  ~title:
+                    "shell environment may not include the active opam \
+                     switch"
+                  ~detail:(env_detail ~switch_bin ~missing ~outside)
+                  ~suggestion:(Platform.environment_sync_suggestion os)
+                  Check.Warn;
+              ]))
 
 let package_diagnostic packages package ~optional =
   if has_package packages package then
@@ -175,18 +275,22 @@ let package_diagnostic packages package ~optional =
       ~suggestion:(Printf.sprintf "opam install %s" package)
       Check.Warn
 
-let package_diagnostics ~(run : Process.runner) =
+let read_package_state ~(run : Process.runner) =
   let result = run "opam" [ "list"; "--installed"; "--short" ] in
   match result.status with
   | Process.Exited 0 ->
-      let packages = parse_installed_packages result.stdout in
+      Installed_packages (parse_installed_packages result.stdout)
+  | _ -> Package_query_failed result
+
+let package_diagnostics = function
+  | Installed_packages packages ->
       [
         package_diagnostic packages "dune" ~optional:false;
         package_diagnostic packages "ocaml-lsp-server" ~optional:false;
         package_diagnostic packages "ocamlformat" ~optional:false;
         package_diagnostic packages "utop" ~optional:true;
       ]
-  | _ ->
+  | Package_query_failed result ->
       [
         Check.make ~id:"opam.packages"
           ~title:"could not read installed opam packages"
@@ -198,10 +302,11 @@ let package_diagnostics ~(run : Process.runner) =
 
 let diagnostics ~(run : Process.runner) os =
   if opam_available ~run then
+    let package_state = read_package_state ~run in
     [ initialized_diagnostic ~run ]
     @ switch_diagnostics ~run os
-    @ switch_bin_diagnostic ~run os
-    @ package_diagnostics ~run
+    @ env_sync_diagnostic ~run os package_state
+    @ package_diagnostics package_state
   else
     [
       Check.make ~id:"opam.initialized"

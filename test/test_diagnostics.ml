@@ -39,11 +39,33 @@ let expect_detail label expected diagnostic =
   expect_string label expected
     (expect_some (label ^ " detail") diagnostic.Check.detail)
 
+let contains_substring haystack needle =
+  let haystack_length = String.length haystack in
+  let needle_length = String.length needle in
+  let rec loop index =
+    needle_length = 0
+    || index + needle_length <= haystack_length
+       && (String.sub haystack index needle_length = needle
+          || loop (index + 1))
+  in
+  loop 0
+
+let expect_contains label needle haystack =
+  if not (contains_substring haystack needle) then
+    failwith (Printf.sprintf "%s: missing substring %S" label needle)
+
 let find_diagnostic id diagnostics =
   diagnostics
   |> List.find_opt (fun diagnostic ->
       String.equal diagnostic.Check.id id)
   |> expect_some ("diagnostic " ^ id)
+
+let expect_no_diagnostic id diagnostics =
+  if
+    List.exists
+      (fun diagnostic -> String.equal diagnostic.Check.id id)
+      diagnostics
+  then failwith (Printf.sprintf "unexpected diagnostic %s" id)
 
 let test_command_checks_use_ocamllsp_fallback () =
   let responses =
@@ -164,6 +186,87 @@ let test_missing_opam_skips_opam_checks_as_error () =
     diagnostic;
   expect_int "missing opam exit code" 2 (Check.exit_code diagnostics)
 
+let test_opam_not_initialized_reports_warning () =
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      ( ("opam", [ "var"; "root" ]),
+        (Process.Exited 1, "", "opam has not been initialized\n") );
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 1, "", "No switch is currently set\n") );
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 1, "", "opam has not been initialized\n") );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        (Process.Exited 1, "", "opam has not been initialized\n") );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Linux
+  in
+  let initialized = find_diagnostic "opam.initialized" diagnostics in
+  expect_severity "uninitialized opam is warning" Check.Warn
+    initialized.severity;
+  expect_string "uninitialized opam title"
+    "opam does not appear initialized" initialized.title;
+  expect_detail "uninitialized opam detail"
+    "opam var root returned exit 1: opam has not been initialized"
+    initialized;
+  expect_suggestion "uninitialized opam suggestion" "opam init"
+    initialized
+
+let test_opam_without_selected_switch_reports_switch_error () =
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      ( ("opam", [ "var"; "root" ]),
+        (Process.Exited 0, "/home/me/.opam\n", "") );
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 1, "", "No switch is currently set\n") );
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "default\n5.2.0\n", "") );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        (Process.Exited 0, "", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Linux
+  in
+  let active = find_diagnostic "opam.switch.active" diagnostics in
+  expect_severity "inactive switch is error" Check.Error active.severity;
+  expect_string "inactive switch title" "opam switch not active"
+    active.title;
+  expect_suggestion "inactive switch suggestion" "eval $(opam env)"
+    active;
+  expect_no_diagnostic "opam.env.sync" diagnostics;
+  expect_int "inactive switch exit code" 2 (Check.exit_code diagnostics)
+
+let test_error_like_switch_show_output_reports_no_active_switch () =
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      ( ("opam", [ "var"; "root" ]),
+        (Process.Exited 0, "/home/me/.opam\n", "") );
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "[ERROR] No switch is currently set\n", "")
+      );
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        (Process.Exited 0, "", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Linux
+  in
+  let active = find_diagnostic "opam.switch.active" diagnostics in
+  expect_severity "error-like switch show output" Check.Error
+    active.severity;
+  expect_string "error-like switch show title" "opam switch not active"
+    active.title;
+  expect_detail "error-like switch show detail"
+    "opam did not report an active switch." active;
+  expect_no_diagnostic "opam.env.sync" diagnostics
+
 let test_opam_env_warns_when_ocaml_resolves_outside_active_switch () =
   let responses =
     [
@@ -178,7 +281,7 @@ let test_opam_env_warns_when_ocaml_resolves_outside_active_switch () =
       ( ("sh", [ "-c"; "command -v ocaml" ]),
         (Process.Exited 0, "/usr/bin/ocaml\n", "") );
       ( ("opam", [ "list"; "--installed"; "--short" ]),
-        (Process.Exited 0, "ocaml\ndune\nocaml-lsp-server\n", "") );
+        (Process.Exited 0, "ocaml\n", "") );
     ]
   in
   let diagnostics =
@@ -187,10 +290,11 @@ let test_opam_env_warns_when_ocaml_resolves_outside_active_switch () =
   let env = find_diagnostic "opam.env.sync" diagnostics in
   expect_severity "env sync warning" Check.Warn env.severity;
   expect_string "env sync title"
-    "shell environment may be out of sync with opam" env.title;
+    "shell environment may not include the active opam switch" env.title;
   expect_detail "env sync detail"
-    "ocaml resolves to /usr/bin/ocaml, but the active switch bin is \
-     /home/me/.opam/5.2.0/bin."
+    "Active switch bin: /home/me/.opam/5.2.0/bin\n\
+     Commands resolving outside the active switch:\n\
+     ocaml: /usr/bin/ocaml"
     env;
   expect_suggestion "env sync suggestion" "eval $(opam env)" env;
   let ocamlformat =
@@ -198,6 +302,122 @@ let test_opam_env_warns_when_ocaml_resolves_outside_active_switch () =
   in
   expect_severity "missing ocamlformat package" Check.Warn
     ocamlformat.severity
+
+let test_opam_env_warns_when_installed_switch_tools_are_missing_from_path
+    () =
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      (("opam", [ "var"; "root" ]), (Process.Exited 0, "C:\\opam\n", ""));
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, "C:\\opam\\default\\bin\n", "") );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        ( Process.Exited 0,
+          "ocaml\ndune\nocaml-lsp-server\nocamlformat\n",
+          "" ) );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Windows
+  in
+  let env = find_diagnostic "opam.env.sync" diagnostics in
+  expect_severity "missing switch tools warning" Check.Warn env.severity;
+  expect_string "missing switch tools title"
+    "shell environment may not include the active opam switch" env.title;
+  expect_contains "missing switch tools detail"
+    "Active switch bin: C:\\opam\\default\\bin"
+    (expect_some "missing switch tools detail" env.detail);
+  expect_contains "missing commands detail"
+    "Commands missing from PATH: ocaml, dune, OCaml LSP, ocamlformat."
+    (expect_some "missing switch tools detail" env.detail);
+  expect_contains "powershell env suggestion"
+    "PowerShell: (& opam env) -split"
+    (expect_some "missing switch tools suggestion" env.suggestion);
+  let json = Doctor.Report.render_json diagnostics in
+  expect_contains "env json name" "\"name\": \"opam.env.sync\"" json;
+  expect_contains "env json status" "\"status\": \"warn\"" json;
+  expect_contains "env json message"
+    "\"message\": \"shell environment may not include the active opam \
+     switch\""
+    json;
+  expect_contains "env json detail"
+    "\"Active switch bin: C:\\\\opam\\\\default\\\\bin\"" json;
+  expect_contains "env json suggestion"
+    "\"Suggested fix: PowerShell: (& opam env) -split" json;
+  let dune = find_diagnostic "opam.package.dune" diagnostics in
+  expect_severity "dune package installed" Check.Ok dune.severity
+
+let test_opam_env_is_ok_when_installed_switch_tools_are_visible () =
+  let switch_bin = "C:\\opam\\default\\bin" in
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      (("opam", [ "var"; "root" ]), (Process.Exited 0, "C:\\opam\n", ""));
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, switch_bin ^ "\n", "") );
+      ( ("where", [ "ocaml" ]),
+        (Process.Exited 0, switch_bin ^ "\\ocaml.exe\n", "") );
+      ( ("where", [ "dune" ]),
+        (Process.Exited 0, switch_bin ^ "\\dune.exe\n", "") );
+      ( ("where", [ "ocaml-lsp-server" ]),
+        (Process.Exited 0, switch_bin ^ "\\ocaml-lsp-server.exe\n", "")
+      );
+      ( ("where", [ "ocamlformat" ]),
+        (Process.Exited 0, switch_bin ^ "\\ocamlformat.exe\n", "") );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        ( Process.Exited 0,
+          "ocaml\ndune\nocaml-lsp-server\nocamlformat\nutop\n",
+          "" ) );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Windows
+  in
+  let env = find_diagnostic "opam.env.sync" diagnostics in
+  expect_severity "visible switch tools ok" Check.Ok env.severity;
+  expect_string "visible switch tools title"
+    "shell environment appears synced with opam" env.title;
+  expect_detail "visible switch tools detail"
+    "ocaml resolves to C:\\opam\\default\\bin\\ocaml.exe" env;
+  let ocamlformat =
+    find_diagnostic "opam.package.ocamlformat" diagnostics
+  in
+  expect_severity "ocamlformat package installed" Check.Ok
+    ocamlformat.severity
+
+let test_empty_opam_bin_output_is_reported () =
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      ( ("opam", [ "var"; "root" ]),
+        (Process.Exited 0, "/home/me/.opam\n", "") );
+      (("opam", [ "switch"; "show" ]), (Process.Exited 0, "5.2.0\n", ""));
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "5.2.0\n", "") );
+      (("opam", [ "var"; "bin" ]), (Process.Exited 0, "\n", ""));
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        (Process.Exited 0, "\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Linux
+  in
+  let env = find_diagnostic "opam.env.sync" diagnostics in
+  expect_severity "empty opam bin warning" Check.Warn env.severity;
+  expect_string "empty opam bin title"
+    "active switch bin could not be read" env.title;
+  expect_detail "empty opam bin detail" "opam var bin returned exit 0"
+    env;
+  expect_suggestion "empty opam bin suggestion"
+    "Run `opam var bin` to inspect the active switch." env
 
 let test_windows_opam_env_suggestion_matches_shell_wording () =
   let responses =
@@ -224,14 +444,34 @@ let test_windows_opam_env_suggestion_matches_shell_wording () =
   let env = find_diagnostic "opam.env.sync" diagnostics in
   expect_severity "windows env sync warning" Check.Warn env.severity;
   expect_suggestion "windows env sync suggestion"
-    "Run `opam env` and apply the environment changes in your current \
-     shell, then restart the terminal if needed."
+    "PowerShell: (& opam env) -split '\\r?\\n' | ForEach-Object { \
+     Invoke-Expression $_ }\n\
+     cmd.exe: for /f \"tokens=*\" %i in ('opam env') do @%i"
     env
 
 let test_missing_code_command_skips_vscode_extension_check () =
   let diagnostics = Editor.diagnostics ~run:(fake_runner []) in
   let code = find_diagnostic "editor.vscode.command" diagnostics in
   expect_severity "missing code is ok" Check.Ok code.severity
+
+let test_vscode_without_ocaml_platform_extension_warns () =
+  let responses =
+    [
+      (("code", [ "--version" ]), (Process.Exited 0, "1.90.0\n", ""));
+      ( ("code", [ "--list-extensions" ]),
+        (Process.Exited 0, "some.other-extension\n", "") );
+    ]
+  in
+  let diagnostics = Editor.diagnostics ~run:(fake_runner responses) in
+  let extension =
+    find_diagnostic "editor.vscode.ocaml-platform" diagnostics
+  in
+  expect_severity "missing VS Code extension is warning" Check.Warn
+    extension.severity;
+  expect_string "missing VS Code extension title"
+    "VS Code OCaml Platform extension not detected" extension.title;
+  expect_suggestion "missing VS Code extension suggestion"
+    "Install extension ocamllabs.ocaml-platform in VS Code." extension
 
 let () =
   List.iter
@@ -242,7 +482,14 @@ let () =
       test_missing_development_tools_are_warnings;
       test_failed_opam_version_check_is_an_error;
       test_missing_opam_skips_opam_checks_as_error;
+      test_opam_not_initialized_reports_warning;
+      test_opam_without_selected_switch_reports_switch_error;
+      test_error_like_switch_show_output_reports_no_active_switch;
       test_opam_env_warns_when_ocaml_resolves_outside_active_switch;
+      test_opam_env_warns_when_installed_switch_tools_are_missing_from_path;
+      test_opam_env_is_ok_when_installed_switch_tools_are_visible;
+      test_empty_opam_bin_output_is_reported;
       test_windows_opam_env_suggestion_matches_shell_wording;
       test_missing_code_command_skips_vscode_extension_check;
+      test_vscode_without_ocaml_platform_extension_warns;
     ]

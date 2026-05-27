@@ -10,8 +10,17 @@ shell files, or editor settings.
 
 It currently checks platform details, core tool versions, opam initialization
 state, active and available switches, whether the resolved `ocaml` appears to
-match the active switch, selected opam packages, and the VS Code OCaml Platform
-extension when `code` is available.
+match the active switch, whether installed switch tools are visible on `PATH`,
+selected opam packages, and the VS Code OCaml Platform extension when `code` is
+available.
+
+The read-only diagnostic contract is described in
+[docs/diagnostic-contract.md](docs/diagnostic-contract.md).
+
+When opam has an active switch but switch tools are missing from the current
+shell, `doctor` reports the active switch bin path and suggests reloading the
+opam environment. On Windows it prints PowerShell and cmd.exe commands; on
+Unix-like systems it uses `eval $(opam env)`.
 
 ## Installation
 
@@ -84,10 +93,31 @@ $ doctor check --json
 }
 ```
 
+Diagnostic `name` values are intended to be stable for scripts. Current names:
+
+- `platform.os`
+- `command.opam`
+- `command.ocaml`
+- `command.dune`
+- `command.ocaml-lsp-server`
+- `command.ocamlformat`
+- `opam.initialized`
+- `opam.switch.active`
+- `opam.switch.list`
+- `opam.env.sync`
+- `opam.package.dune`
+- `opam.package.ocaml-lsp-server`
+- `opam.package.ocamlformat`
+- `opam.package.utop`
+- `opam.packages`
+- `editor.vscode.command`
+- `editor.vscode.ocaml-platform`
+- `editor.vscode.extensions`
+
 `doctor version` prints:
 
 ```console
-doctor 0.2.0
+doctor 0.3.0
 ```
 
 ## Exit Codes

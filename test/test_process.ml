@@ -13,6 +13,13 @@ let expect_some label = function
   | Some value -> value
   | None -> failwith (Printf.sprintf "%s: expected Some _" label)
 
+let expect_locator label os expected_command expected_args =
+  let command, args_for = Doctor.Platform.command_locator os in
+  expect_equal (label ^ " command") expected_command command;
+  expect_equal (label ^ " args")
+    (String.concat "\000" expected_args)
+    (String.concat "\000" (args_for "ocaml"))
+
 let () =
   expect_equal "command line quoting" "opam \"switch show\""
     (Doctor.Process.command_line "opam" [ "switch show" ]);
@@ -43,4 +50,22 @@ let () =
        "/home/me/.opam/5.2.0/bin/ocaml");
   expect_false "path with shared prefix is not below switch bin"
     (Doctor.Platform.is_path_under ~parent:"/home/me/.opam/5.2.0/bin"
-       "/home/me/.opam/5.2.0/bin-old/ocaml")
+       "/home/me/.opam/5.2.0/bin-old/ocaml");
+  expect_bool "macOS switch path below bin"
+    (Doctor.Platform.is_path_under ~parent:"/Users/me/.opam/5.2.0/bin"
+       "/Users/me/.opam/5.2.0/bin/ocaml");
+  expect_bool "Linux switch path below bin"
+    (Doctor.Platform.is_path_under ~parent:"/home/me/.opam/default/bin"
+       "/home/me/.opam/default/bin/dune");
+  expect_bool "Windows switch path below bin"
+    (Doctor.Platform.is_path_under ~parent:"C:\\opam\\default\\bin"
+       "C:\\opam\\default\\bin\\ocaml.exe");
+  expect_false "Windows different bin is outside switch"
+    (Doctor.Platform.is_path_under ~parent:"C:\\opam\\default\\bin"
+       "C:\\OCaml\\bin\\ocaml.exe");
+  expect_locator "macOS command locator" Doctor.Platform.Macos "sh"
+    [ "-c"; "command -v ocaml" ];
+  expect_locator "Linux command locator" Doctor.Platform.Linux "sh"
+    [ "-c"; "command -v ocaml" ];
+  expect_locator "Windows command locator" Doctor.Platform.Windows
+    "where" [ "ocaml" ]
