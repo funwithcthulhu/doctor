@@ -53,6 +53,13 @@ doctor version
 doctor --help
 ```
 
+The package also installs `opam-doctor`. When installed through opam, the same
+CLI is available as an opam plugin:
+
+```console
+opam doctor check
+```
+
 `doctor check` prints a text report:
 
 ```console
@@ -117,7 +124,7 @@ Diagnostic `name` values are intended to be stable for scripts. Current names:
 `doctor version` prints:
 
 ```console
-doctor 0.3.0
+doctor 0.4.0
 ```
 
 ## Exit Codes

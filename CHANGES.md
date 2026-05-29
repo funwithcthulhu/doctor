@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 - 2026-05-29
+
+- Add an `opam-doctor` executable so opam can dispatch the tool as
+  `opam doctor`.
+- Mark the package with the opam `plugin` flag.
+- Keep the existing `doctor` command and diagnostic behavior unchanged.
+
 ## 0.3.0 - 2026-05-27
 
 - Improve opam switch environment diagnostics when switch tools are installed
