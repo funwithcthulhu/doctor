@@ -91,6 +91,20 @@ let test_command_diagnostic_uses_first_trimmed_stdout_line () =
   expect_severity "command success" Check.Ok diagnostic.severity;
   expect_string "command title" "tool found: 1.2.3" diagnostic.title
 
+let test_command_diagnostic_uses_stderr_version_when_stdout_is_empty ()
+    =
+  let responses =
+    [
+      (("tool", [ "--version" ]), (Process.Exited 0, "", "  9.9.9  \n"));
+    ]
+  in
+  let diagnostic =
+    Check.command_diagnostic ~run:(fake_runner responses) tool_spec
+  in
+  expect_severity "stderr version success" Check.Ok diagnostic.severity;
+  expect_string "stderr version title" "tool found: 9.9.9"
+    diagnostic.title
+
 let test_command_diagnostic_reports_stderr_only_failure () =
   let responses =
     [
@@ -383,6 +397,33 @@ let test_opam_env_warns_when_ocaml_resolves_outside_active_switch () =
   expect_severity "missing ocamlformat package" Check.Warn
     ocamlformat.severity
 
+let test_opam_env_rejects_sibling_path_prefix () =
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      ( ("opam", [ "var"; "root" ]),
+        (Process.Exited 0, "/home/me/.opam\n", "") );
+      (("opam", [ "switch"; "show" ]), (Process.Exited 0, "5.2.0\n", ""));
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "5.2.0\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, "/home/me/.opam/5.2.0/bin\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, "/home/me/.opam/5.2.0/bin-old/ocaml\n", "")
+      );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        (Process.Exited 0, "ocaml\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Linux
+  in
+  let env = find_diagnostic "opam.env.sync" diagnostics in
+  expect_severity "sibling path prefix warning" Check.Warn env.severity;
+  expect_contains "sibling path prefix detail"
+    "ocaml: /home/me/.opam/5.2.0/bin-old/ocaml"
+    (expect_some "sibling path prefix detail" env.detail)
+
 let test_opam_env_warns_when_installed_switch_tools_are_missing_from_path
     () =
   let responses =
@@ -473,6 +514,35 @@ let test_opam_env_is_ok_when_installed_switch_tools_are_visible () =
   expect_severity "ocamlformat package installed" Check.Ok
     ocamlformat.severity
 
+let test_windows_where_reports_first_non_switch_match () =
+  let switch_bin = "C:\\opam\\default\\bin" in
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      (("opam", [ "var"; "root" ]), (Process.Exited 0, "C:\\opam\n", ""));
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, switch_bin ^ "\n", "") );
+      ( ("where", [ "ocaml" ]),
+        ( Process.Exited 0,
+          "C:\\OCaml\\bin\\ocaml.exe\n" ^ switch_bin ^ "\\ocaml.exe\n",
+          "" ) );
+      ( ("opam", [ "list"; "--installed"; "--short" ]),
+        (Process.Exited 0, "ocaml\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.diagnostics ~run:(fake_runner responses) Platform.Windows
+  in
+  let env = find_diagnostic "opam.env.sync" diagnostics in
+  expect_severity "windows first match warning" Check.Warn env.severity;
+  expect_contains "windows first match detail"
+    "ocaml: C:\\OCaml\\bin\\ocaml.exe"
+    (expect_some "windows first match detail" env.detail)
+
 let test_empty_opam_bin_output_is_reported () =
   let responses =
     [
@@ -514,6 +584,16 @@ let test_package_diagnostics_report_installed_and_missing_packages () =
     lsp.title;
   expect_suggestion "missing package suggestion"
     "opam install ocaml-lsp-server" lsp
+
+let test_similar_package_name_does_not_count_as_installed () =
+  let diagnostics =
+    Opam.package_diagnostics
+      (Opam.Installed_packages
+         [ "dune-configurator"; "ocaml-lsp-server"; "ocamlformat" ])
+  in
+  let dune = find_diagnostic "opam.package.dune" diagnostics in
+  expect_severity "similar package name" Check.Warn dune.severity;
+  expect_string "similar package title" "dune not installed" dune.title
 
 let test_package_query_failure_is_reported () =
   let result =
@@ -581,6 +661,23 @@ let test_vscode_with_ocaml_platform_extension_is_ok () =
   expect_string "VS Code extension present title"
     "VS Code OCaml Platform extension detected" extension.title
 
+let test_similar_vscode_extension_name_does_not_match () =
+  let responses =
+    [
+      (("code", [ "--version" ]), (Process.Exited 0, "1.90.0\n", ""));
+      ( ("code", [ "--list-extensions" ]),
+        (Process.Exited 0, "ocamllabs.ocaml-platform-insiders\n", "") );
+    ]
+  in
+  let diagnostics = Editor.diagnostics ~run:(fake_runner responses) in
+  let extension =
+    find_diagnostic "editor.vscode.ocaml-platform" diagnostics
+  in
+  expect_severity "similar VS Code extension name" Check.Warn
+    extension.severity;
+  expect_string "similar VS Code extension title"
+    "VS Code OCaml Platform extension not detected" extension.title
+
 let test_vscode_without_ocaml_platform_extension_warns () =
   let responses =
     [
@@ -623,6 +720,7 @@ let () =
     (fun test -> test ())
     [
       test_command_diagnostic_uses_first_trimmed_stdout_line;
+      test_command_diagnostic_uses_stderr_version_when_stdout_is_empty;
       test_command_diagnostic_reports_stderr_only_failure;
       test_command_diagnostic_reports_missing_command;
       test_command_checks_use_ocamllsp_fallback;
@@ -636,14 +734,18 @@ let () =
       test_opam_without_selected_switch_reports_switch_error;
       test_error_like_switch_show_output_reports_no_active_switch;
       test_opam_env_warns_when_ocaml_resolves_outside_active_switch;
+      test_opam_env_rejects_sibling_path_prefix;
       test_opam_env_warns_when_installed_switch_tools_are_missing_from_path;
       test_opam_env_is_ok_when_installed_switch_tools_are_visible;
+      test_windows_where_reports_first_non_switch_match;
       test_empty_opam_bin_output_is_reported;
       test_package_diagnostics_report_installed_and_missing_packages;
+      test_similar_package_name_does_not_count_as_installed;
       test_package_query_failure_is_reported;
       test_windows_opam_env_suggestion_matches_shell_wording;
       test_missing_code_command_skips_vscode_extension_check;
       test_vscode_with_ocaml_platform_extension_is_ok;
+      test_similar_vscode_extension_name_does_not_match;
       test_vscode_without_ocaml_platform_extension_warns;
       test_vscode_extension_query_failure_warns;
     ]
