@@ -3,4 +3,5 @@
  (libraries doctor)
  (deps
   (:doctor ../bin/main.exe)
+  (:opam_doctor ../bin/opam_doctor.exe)
   (source_tree fixtures)))
