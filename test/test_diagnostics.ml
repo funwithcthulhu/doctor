@@ -67,6 +67,58 @@ let expect_no_diagnostic id diagnostics =
       diagnostics
   then failwith (Printf.sprintf "unexpected diagnostic %s" id)
 
+let tool_spec =
+  Check.
+    {
+      command = "tool";
+      args = [ "--version" ];
+      label = "tool";
+      missing_severity = Warn;
+      missing_suggestion = "install tool";
+      version_parser = String.trim;
+    }
+
+let test_command_diagnostic_uses_first_trimmed_stdout_line () =
+  let responses =
+    [
+      ( ("tool", [ "--version" ]),
+        (Process.Exited 0, "  1.2.3  \nignored\n", "") );
+    ]
+  in
+  let diagnostic =
+    Check.command_diagnostic ~run:(fake_runner responses) tool_spec
+  in
+  expect_severity "command success" Check.Ok diagnostic.severity;
+  expect_string "command title" "tool found: 1.2.3" diagnostic.title
+
+let test_command_diagnostic_reports_stderr_only_failure () =
+  let responses =
+    [
+      ( ("tool", [ "--version" ]),
+        (Process.Exited 2, "", "tool failed\n") );
+    ]
+  in
+  let diagnostic =
+    Check.command_diagnostic ~run:(fake_runner responses) tool_spec
+  in
+  expect_severity "stderr-only failure" Check.Warn diagnostic.severity;
+  expect_string "stderr-only failure title" "tool command failed"
+    diagnostic.title;
+  expect_detail "stderr-only failure detail"
+    "tool --version returned exit 2: tool failed" diagnostic
+
+let test_command_diagnostic_reports_missing_command () =
+  let diagnostic =
+    Check.command_diagnostic ~run:(fake_runner []) tool_spec
+  in
+  expect_severity "missing command" Check.Warn diagnostic.severity;
+  expect_string "missing command title" "tool not found"
+    diagnostic.title;
+  expect_detail "missing command detail"
+    "The `tool` command is not available on PATH." diagnostic;
+  expect_suggestion "missing command suggestion" "install tool"
+    diagnostic
+
 let test_command_checks_use_ocamllsp_fallback () =
   let responses =
     [
@@ -186,6 +238,13 @@ let test_missing_opam_skips_opam_checks_as_error () =
     diagnostic;
   expect_int "missing opam exit code" 2 (Check.exit_code diagnostics)
 
+let test_opam_available_when_version_command_succeeds () =
+  let responses =
+    [ (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", "")) ]
+  in
+  if not (Opam.opam_available ~run:(fake_runner responses)) then
+    failwith "opam should be available"
+
 let test_opam_not_initialized_reports_warning () =
   let responses =
     [
@@ -213,6 +272,27 @@ let test_opam_not_initialized_reports_warning () =
     initialized;
   expect_suggestion "uninitialized opam suggestion" "opam init"
     initialized
+
+let test_switch_show_failure_reports_switch_error () =
+  let responses =
+    [
+      (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 1, "", "No switch is currently set\n") );
+      ( ("opam", [ "switch"; "list"; "--short" ]),
+        (Process.Exited 0, "", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.switch_diagnostics ~run:(fake_runner responses) Platform.Linux
+  in
+  let active = find_diagnostic "opam.switch.active" diagnostics in
+  expect_severity "switch show failure" Check.Error active.severity;
+  expect_detail "switch show failure detail"
+    "opam switch show returned exit 1: No switch is currently set"
+    active;
+  expect_suggestion "switch show failure suggestion"
+    "opam switch create 5.2.0" active
 
 let test_opam_without_selected_switch_reports_switch_error () =
   let responses =
@@ -419,6 +499,36 @@ let test_empty_opam_bin_output_is_reported () =
   expect_suggestion "empty opam bin suggestion"
     "Run `opam var bin` to inspect the active switch." env
 
+let test_package_diagnostics_report_installed_and_missing_packages () =
+  let diagnostics =
+    Opam.package_diagnostics
+      (Opam.Installed_packages [ "dune"; "ocamlformat" ])
+  in
+  let dune = find_diagnostic "opam.package.dune" diagnostics in
+  expect_severity "installed package" Check.Ok dune.severity;
+  let lsp =
+    find_diagnostic "opam.package.ocaml-lsp-server" diagnostics
+  in
+  expect_severity "missing package" Check.Warn lsp.severity;
+  expect_string "missing package title" "ocaml-lsp-server not installed"
+    lsp.title;
+  expect_suggestion "missing package suggestion"
+    "opam install ocaml-lsp-server" lsp
+
+let test_package_query_failure_is_reported () =
+  let result =
+    result ~stderr:"opam failed\n" (Process.Exited 31) "opam"
+      [ "list"; "--installed"; "--short" ]
+  in
+  let diagnostics =
+    Opam.package_diagnostics (Opam.Package_query_failed result)
+  in
+  let diagnostic = find_diagnostic "opam.packages" diagnostics in
+  expect_severity "package query failure" Check.Warn diagnostic.severity;
+  expect_detail "package query failure detail"
+    "opam list --installed --short returned exit 31: opam failed"
+    diagnostic
+
 let test_windows_opam_env_suggestion_matches_shell_wording () =
   let responses =
     [
@@ -454,6 +564,23 @@ let test_missing_code_command_skips_vscode_extension_check () =
   let code = find_diagnostic "editor.vscode.command" diagnostics in
   expect_severity "missing code is ok" Check.Ok code.severity
 
+let test_vscode_with_ocaml_platform_extension_is_ok () =
+  let responses =
+    [
+      (("code", [ "--version" ]), (Process.Exited 0, "1.90.0\n", ""));
+      ( ("code", [ "--list-extensions" ]),
+        (Process.Exited 0, "  ocamllabs.ocaml-platform  \n", "") );
+    ]
+  in
+  let diagnostics = Editor.diagnostics ~run:(fake_runner responses) in
+  let extension =
+    find_diagnostic "editor.vscode.ocaml-platform" diagnostics
+  in
+  expect_severity "VS Code extension present" Check.Ok
+    extension.severity;
+  expect_string "VS Code extension present title"
+    "VS Code OCaml Platform extension detected" extension.title
+
 let test_vscode_without_ocaml_platform_extension_warns () =
   let responses =
     [
@@ -473,23 +600,50 @@ let test_vscode_without_ocaml_platform_extension_warns () =
   expect_suggestion "missing VS Code extension suggestion"
     "Install extension ocamllabs.ocaml-platform in VS Code." extension
 
+let test_vscode_extension_query_failure_warns () =
+  let responses =
+    [
+      (("code", [ "--version" ]), (Process.Exited 0, "1.90.0\n", ""));
+      ( ("code", [ "--list-extensions" ]),
+        (Process.Exited 1, "", "extensions unavailable\n") );
+    ]
+  in
+  let diagnostics = Editor.diagnostics ~run:(fake_runner responses) in
+  let extensions =
+    find_diagnostic "editor.vscode.extensions" diagnostics
+  in
+  expect_severity "VS Code extension query failure" Check.Warn
+    extensions.severity;
+  expect_detail "VS Code extension query failure detail"
+    "code --list-extensions returned exit 1: extensions unavailable"
+    extensions
+
 let () =
   List.iter
     (fun test -> test ())
     [
+      test_command_diagnostic_uses_first_trimmed_stdout_line;
+      test_command_diagnostic_reports_stderr_only_failure;
+      test_command_diagnostic_reports_missing_command;
       test_command_checks_use_ocamllsp_fallback;
       test_missing_ocamlformat_is_a_warning;
       test_missing_development_tools_are_warnings;
       test_failed_opam_version_check_is_an_error;
       test_missing_opam_skips_opam_checks_as_error;
+      test_opam_available_when_version_command_succeeds;
       test_opam_not_initialized_reports_warning;
+      test_switch_show_failure_reports_switch_error;
       test_opam_without_selected_switch_reports_switch_error;
       test_error_like_switch_show_output_reports_no_active_switch;
       test_opam_env_warns_when_ocaml_resolves_outside_active_switch;
       test_opam_env_warns_when_installed_switch_tools_are_missing_from_path;
       test_opam_env_is_ok_when_installed_switch_tools_are_visible;
       test_empty_opam_bin_output_is_reported;
+      test_package_diagnostics_report_installed_and_missing_packages;
+      test_package_query_failure_is_reported;
       test_windows_opam_env_suggestion_matches_shell_wording;
       test_missing_code_command_skips_vscode_extension_check;
+      test_vscode_with_ocaml_platform_extension_is_ok;
       test_vscode_without_ocaml_platform_extension_warns;
+      test_vscode_extension_query_failure_warns;
     ]

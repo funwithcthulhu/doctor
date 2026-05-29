@@ -2,4 +2,5 @@
  (names test_process test_report test_diagnostics test_cli)
  (libraries doctor)
  (deps
+  (:doctor ../bin/main.exe)
   (source_tree fixtures)))

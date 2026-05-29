@@ -146,14 +146,21 @@ let test_json_report_contains_diagnostics_summary_and_exit_code () =
 
 let test_json_escapes_strings () =
   let diagnostic =
-    diagnostic Doctor.Check.Warn "quoted \"message\""
-      ~detail:"first line\nsecond line"
+    diagnostic Doctor.Check.Warn "quoted \"message\" with \\ path"
+      ~detail:"first line\nsecond\tline"
   in
   let json = Doctor.Report.render_json [ diagnostic ] in
   expect_contains "json quotes"
-    "\"message\": \"quoted \\\"message\\\"\"" json;
-  expect_contains "json newline"
-    "\"details\": [\"first line\", \"second line\"]" json
+    "\"message\": \"quoted \\\"message\\\" with \\\\ path\"" json;
+  expect_contains "json newline and tab"
+    "\"details\": [\"first line\", \"second\\tline\"]" json
+
+let test_json_represents_warning_and_error_separately () =
+  let json = Doctor.Report.render_json [ warn; error ] in
+  expect_contains "json warning status" "\"status\": \"warn\"" json;
+  expect_contains "json error status" "\"status\": \"error\"" json;
+  expect_contains "json error summary" "\"status\": \"error\"," json;
+  expect_contains "json error exit code" "\"exit_code\": 2" json
 
 let test_empty_json_report () =
   let expected =
@@ -191,6 +198,7 @@ let () =
       test_multiline_detail_and_suggestion_are_indented;
       test_json_report_contains_diagnostics_summary_and_exit_code;
       test_json_escapes_strings;
+      test_json_represents_warning_and_error_separately;
       test_empty_json_report;
       test_golden_text_reports;
     ]

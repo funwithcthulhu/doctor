@@ -13,12 +13,26 @@ let expect_some label = function
   | Some value -> value
   | None -> failwith (Printf.sprintf "%s: expected Some _" label)
 
+let expect_none label = function
+  | Some value ->
+      failwith (Printf.sprintf "%s: expected None, got %S" label value)
+  | None -> ()
+
 let expect_locator label os expected_command expected_args =
   let command, args_for = Doctor.Platform.command_locator os in
   expect_equal (label ^ " command") expected_command command;
   expect_equal (label ^ " args")
     (String.concat "\000" expected_args)
     (String.concat "\000" (args_for "ocaml"))
+
+let result ?(stdout = "") ?(stderr = "") status command args =
+  { Doctor.Process.command; args; status; stdout; stderr }
+
+let fake_runner responses command args =
+  match List.assoc_opt (command, args) responses with
+  | Some (status, stdout, stderr) ->
+      result ~stdout ~stderr status command args
+  | None -> result (Doctor.Process.Spawn_error "not found") command args
 
 let () =
   expect_equal "command line quoting" "opam \"switch show\""
@@ -68,4 +82,50 @@ let () =
   expect_locator "Linux command locator" Doctor.Platform.Linux "sh"
     [ "-c"; "command -v ocaml" ];
   expect_locator "Windows command locator" Doctor.Platform.Windows
-    "where" [ "ocaml" ]
+    "where" [ "ocaml" ];
+  expect_equal "executable present" "/home/me/.opam/default/bin/ocaml"
+    (expect_some "executable present"
+       (Doctor.Opam.locate_command
+          ~run:
+            (fake_runner
+               [
+                 ( ("sh", [ "-c"; "command -v ocaml" ]),
+                   ( Doctor.Process.Exited 0,
+                     "/home/me/.opam/default/bin/ocaml\n",
+                     "" ) );
+               ])
+          Doctor.Platform.Linux "ocaml"));
+  expect_none "executable absent"
+    (Doctor.Opam.locate_command ~run:(fake_runner [])
+       Doctor.Platform.Linux "ocaml");
+  expect_none "empty PATH-like result"
+    (Doctor.Opam.locate_command
+       ~run:
+         (fake_runner
+            [
+              ( ("sh", [ "-c"; "command -v ocaml" ]),
+                (Doctor.Process.Exited 1, "", "") );
+            ])
+       Doctor.Platform.Linux "ocaml");
+  expect_none "whitespace-only locator output"
+    (Doctor.Opam.locate_command
+       ~run:
+         (fake_runner
+            [
+              ( ("sh", [ "-c"; "command -v ocaml" ]),
+                (Doctor.Process.Exited 0, " \n\t\n", "") );
+            ])
+       Doctor.Platform.Linux "ocaml");
+  expect_equal "duplicate PATH entries still resolve first match"
+    "/bin/ocaml"
+    (expect_some "duplicate PATH entries"
+       (Doctor.Opam.locate_command
+          ~run:
+            (fake_runner
+               [
+                 ( ("sh", [ "-c"; "command -v ocaml" ]),
+                   ( Doctor.Process.Exited 0,
+                     "/bin/ocaml\n/bin/ocaml\n",
+                     "" ) );
+               ])
+          Doctor.Platform.Linux "ocaml"))
