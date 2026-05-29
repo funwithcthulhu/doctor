@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/funwithcthulhu/doctor/actions/workflows/ci.yml/badge.svg)](https://github.com/funwithcthulhu/doctor/actions/workflows/ci.yml)
 [![opam](https://badgen.net/opam/v/doctor)](https://opam.ocaml.org/packages/doctor/)
-[![license](https://img.shields.io/github/license/funwithcthulhu/doctor)](LICENSE)
+[![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 `doctor` checks a local OCaml development environment. It reports missing tools,
 suspicious opam state, and editor setup issues; it does not modify switches,
