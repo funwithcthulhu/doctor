@@ -100,26 +100,8 @@ $ doctor check --json
 }
 ```
 
-Diagnostic `name` values are intended to be stable for scripts. Current names:
-
-- `platform.os`
-- `command.opam`
-- `command.ocaml`
-- `command.dune`
-- `command.ocaml-lsp-server`
-- `command.ocamlformat`
-- `opam.initialized`
-- `opam.switch.active`
-- `opam.switch.list`
-- `opam.env.sync`
-- `opam.package.dune`
-- `opam.package.ocaml-lsp-server`
-- `opam.package.ocamlformat`
-- `opam.package.utop`
-- `opam.packages`
-- `editor.vscode.command`
-- `editor.vscode.ocaml-platform`
-- `editor.vscode.extensions`
+Diagnostic `name` values are intended to be stable for scripts. The current
+names are listed in [docs/diagnostic-contract.md](docs/diagnostic-contract.md).
 
 `doctor version` prints:
 

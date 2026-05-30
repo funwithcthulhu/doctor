@@ -2,21 +2,25 @@ let render_diagnostics ~json diagnostics =
   if json then Report.render_json diagnostics
   else Report.render diagnostics
 
-let run_checks json =
+let diagnostics ~run os =
+  [ Platform.diagnostic os ]
+  @ Check.command_diagnostics ~run
+  @ Opam.diagnostics ~run os
+  @ Editor.diagnostics ~run
+
+let run_checks_with ~run ~os json =
   try
-    let run = Process.run in
-    let os = Platform.detect ~run () in
-    let diagnostics =
-      [ Platform.diagnostic os ]
-      @ Check.command_diagnostics ~run
-      @ Opam.diagnostics ~run os
-      @ Editor.diagnostics ~run
-    in
+    let diagnostics = diagnostics ~run os in
     print_string (render_diagnostics ~json diagnostics);
     Report.exit_code diagnostics
   with exn ->
     prerr_endline ("doctor internal failure: " ^ Printexc.to_string exn);
     3
+
+let run_checks json =
+  let run = Process.run in
+  let os = Platform.detect ~run () in
+  run_checks_with ~run ~os json
 
 let print_version () =
   print_endline Version.display;
