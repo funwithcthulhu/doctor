@@ -78,11 +78,24 @@ let find_project_file relative_path =
 let read_project_file relative_path =
   read_file (find_project_file relative_path) |> normalize_newlines
 
+let remove_final_newline text =
+  if String.ends_with ~suffix:"\n" text then
+    String.sub text 0 (String.length text - 1)
+  else text
+
+let read_project_text_fixture relative_path =
+  read_project_file relative_path |> remove_final_newline
+
 let single_warning_diagnostic =
   Check.make ~id:"command.ocamlformat"
     ~title:"ocamlformat not installed"
     ~detail:"The `ocamlformat` command is not available on PATH."
     ~suggestion:"opam install ocamlformat" Check.Warn
+
+let single_error_diagnostic =
+  Check.make ~id:"opam.switch.active" ~title:"opam switch not active"
+    ~detail:"opam did not report an active switch."
+    ~suggestion:"eval $(opam env)" Check.Error
 
 let test_golden_json_for_one_warning () =
   expect_int "one-warning exit code" 1
@@ -90,6 +103,18 @@ let test_golden_json_for_one_warning () =
   expect_string "one-warning json"
     (read_project_file "test/fixtures/report_one_warning.json")
     (Doctor.Report.render_json [ single_warning_diagnostic ])
+
+let test_golden_json_for_error_run () =
+  expect_int "error exit code" 2
+    (Doctor.Report.exit_code [ single_error_diagnostic ]);
+  let json = Doctor.Report.render_json [ single_error_diagnostic ] in
+  expect_string "error json"
+    (read_project_file "test/fixtures/report_error_run.json")
+    json;
+  expect_contains "error json name key" "\"name\"" json;
+  expect_contains "error json status key" "\"status\"" json;
+  expect_contains "error json message key" "\"message\"" json;
+  expect_contains "error json details key" "\"details\"" json
 
 let find_diagnostic id diagnostics =
   diagnostics
@@ -140,6 +165,9 @@ let documented_diagnostic_names () =
 let add_unique values value =
   if List.exists (String.equal value) values then values
   else value :: values
+
+let sort_unique values =
+  values |> List.fold_left add_unique [] |> List.sort String.compare
 
 let diagnostic_names diagnostics =
   diagnostics
@@ -211,18 +239,35 @@ let emitted_diagnostic_names () =
     Editor.diagnostics
       ~run:(fake_runner vscode_extension_missing_responses);
   ]
-  |> List.concat |> diagnostic_names
+  |> List.concat |> diagnostic_names |> sort_unique
+
+let legacy_diagnostic_names = []
+
+let missing_from left right =
+  left
+  |> List.filter (fun name ->
+      not (List.exists (String.equal name) right))
 
 let test_emitted_diagnostic_names_are_documented () =
-  let documented = documented_diagnostic_names () in
-  emitted_diagnostic_names ()
-  |> List.iter (fun name ->
-      if not (List.exists (String.equal name) documented) then
-        failwith
-          (Printf.sprintf
-             "diagnostic %S is emitted but missing from \
-              docs/diagnostic-contract.md"
-             name))
+  let documented = documented_diagnostic_names () |> sort_unique in
+  let emitted = emitted_diagnostic_names () in
+  let undocumented = missing_from emitted documented in
+  let unused =
+    missing_from documented (emitted @ legacy_diagnostic_names)
+  in
+  match (undocumented, unused) with
+  | [], [] -> ()
+  | _ :: _, _ ->
+      failwith
+        (Printf.sprintf
+           "emitted diagnostics missing from \
+            docs/diagnostic-contract.md: %s"
+           (String.concat ", " undocumented))
+  | [], _ :: _ ->
+      failwith
+        (Printf.sprintf
+           "documented diagnostics not emitted or marked legacy: %s"
+           (String.concat ", " unused))
 
 let capture_output f =
   let stdout_path = Filename.temp_file "doctor-stdout" ".txt" in
@@ -273,6 +318,8 @@ let json_cli_responses =
     (("dune", [ "--version" ]), (Process.Exited 0, "3.17.0\n", ""));
     ( ("ocaml-lsp-server", [ "--version" ]),
       (Process.Exited 0, "1.26.0\n", "") );
+    ( ("ocamlformat", [ "--version" ]),
+      (Process.Exited 0, "0.29.0\n", "") );
     (("opam", [ "var"; "root" ]), (Process.Exited 0, "/tmp/opam\n", ""));
     (("opam", [ "switch"; "show" ]), (Process.Exited 0, "default\n", ""));
     ( ("opam", [ "switch"; "list"; "--short" ]),
@@ -291,14 +338,18 @@ let json_cli_responses =
   ]
 
 let test_check_json_stdout_contains_only_json () =
+  let run = fake_runner json_cli_responses in
   let code, stdout, stderr =
     capture_output (fun () ->
-        Doctor.Cli.run_checks_with
-          ~run:(fake_runner json_cli_responses)
-          ~os:Platform.Linux true)
+        Doctor.Cli.run_checks_with ~run ~os:Platform.Linux true)
+  in
+  let expected_json =
+    Doctor.Cli.diagnostics ~run Platform.Linux
+    |> Doctor.Report.render_json
   in
   expect_int "json check exit code" 1 code;
   expect_string "json check stderr" "" stderr;
+  expect_string "json check stdout" expected_json stdout;
   expect_contains "json stdout starts object" "{\n  \"summary\"" stdout;
   expect_contains "json stdout has diagnostics" "\"diagnostics\"" stdout;
   expect_not_contains "json stdout excludes text header" "OCaml Doctor"
@@ -306,12 +357,68 @@ let test_check_json_stdout_contains_only_json () =
   expect_not_contains "json stdout excludes text statuses" "[WARN]"
     stdout
 
+let missing_switch_tools_responses ~switch_bin =
+  [
+    (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+    (("opam", [ "var"; "root" ]), (Process.Exited 0, "/tmp/opam\n", ""));
+    (("opam", [ "switch"; "show" ]), (Process.Exited 0, "default\n", ""));
+    ( ("opam", [ "switch"; "list"; "--short" ]),
+      (Process.Exited 0, "default\n", "") );
+    ( ("opam", [ "var"; "bin" ]),
+      (Process.Exited 0, switch_bin ^ "\n", "") );
+    ( ("opam", [ "list"; "--installed"; "--short" ]),
+      ( Process.Exited 0,
+        "ocaml\ndune\nocaml-lsp-server\nocamlformat\n",
+        "" ) );
+  ]
+
+let test_windows_opam_env_sync_suggestion_contract () =
+  let diagnostics =
+    Opam.diagnostics
+      ~run:
+        (fake_runner
+           (missing_switch_tools_responses
+              ~switch_bin:"C:\\opam\\default\\bin"))
+      Platform.Windows
+  in
+  let env = find_diagnostic "opam.env.sync" diagnostics in
+  expect_severity "windows env sync severity" Check.Warn env.severity;
+  expect_contains "windows env sync detail"
+    "Active switch bin: C:\\opam\\default\\bin"
+    (expect_some "windows env sync detail" env.detail);
+  expect_string "windows env sync suggestion"
+    (read_project_text_fixture
+       "test/fixtures/opam_env_sync_windows_suggestion.txt")
+    (expect_some "windows env sync suggestion" env.suggestion)
+
+let test_unix_opam_env_sync_suggestion_contract () =
+  let diagnostics =
+    Opam.diagnostics
+      ~run:
+        (fake_runner
+           (missing_switch_tools_responses
+              ~switch_bin:"/home/dev/.opam/default/bin"))
+      Platform.Linux
+  in
+  let env = find_diagnostic "opam.env.sync" diagnostics in
+  expect_severity "unix env sync severity" Check.Warn env.severity;
+  expect_contains "unix env sync detail"
+    "Active switch bin: /home/dev/.opam/default/bin"
+    (expect_some "unix env sync detail" env.detail);
+  expect_string "unix env sync suggestion"
+    (read_project_text_fixture
+       "test/fixtures/opam_env_sync_unix_suggestion.txt")
+    (expect_some "unix env sync suggestion" env.suggestion)
+
 let () =
   List.iter
     (fun test -> test ())
     [
       test_golden_json_for_one_warning;
+      test_golden_json_for_error_run;
       test_opam_env_mismatch_reports_active_switch_bin;
       test_emitted_diagnostic_names_are_documented;
       test_check_json_stdout_contains_only_json;
+      test_windows_opam_env_sync_suggestion_contract;
+      test_unix_opam_env_sync_suggestion_contract;
     ]

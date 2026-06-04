@@ -1,0 +1,14 @@
+{
+  "summary": {
+    "status": "error",
+    "exit_code": 2
+  },
+  "diagnostics": [
+    {
+      "name": "opam.switch.active",
+      "status": "error",
+      "message": "opam switch not active",
+      "details": ["opam did not report an active switch.", "Suggested fix: eval $(opam env)"]
+    }
+  ]
+}
