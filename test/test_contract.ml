@@ -243,7 +243,11 @@ let vscode_extension_missing_responses =
   ]
 
 let env_with_current_directory name =
-  match name with "PATH" -> Some "/usr/bin:.:/bin" | _ -> None
+  match name with
+  | "PATH" -> Some "/usr/bin:.:/bin"
+  | "CLICOLOR_FORCE" -> Some "1"
+  | "GREP_OPTIONS" -> Some "--color=always"
+  | _ -> None
 
 let emitted_diagnostic_names () =
   [

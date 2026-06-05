@@ -84,6 +84,8 @@ treated as display text; tools should prefer `name`, `status`, and
 | `opam.windows.symlink` | Windows user symlink support for opam plugin entries. |
 | `opam.windows.runtime-path` | Windows runtime PATH state for opam plugin dispatch. |
 | `env.path.current-directory` | Current-directory entries in `PATH`. |
+| `env.color.forced` | Forced color-output environment variables. |
+| `env.grep-options` | `GREP_OPTIONS` environment variable state. |
 | `opam.package.dune` | Installed `dune` package state. |
 | `opam.package.ocaml-lsp-server` | Installed `ocaml-lsp-server` package state. |
 | `opam.package.ocamlformat` | Installed `ocamlformat` package state. |

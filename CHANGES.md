@@ -11,6 +11,7 @@
 - Warn when opam Windows runtime directories appear missing from `PATH` for
   plugin dispatch.
 - Warn when `PATH` includes the current directory.
+- Warn when forced color-output variables or `GREP_OPTIONS` may affect builds.
 - Keep the existing `doctor` command and diagnostic behavior unchanged.
 
 ## 0.3.0 - 2026-05-27
