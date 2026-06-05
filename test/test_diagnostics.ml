@@ -23,6 +23,13 @@ let expect_int label expected actual =
     failwith
       (Printf.sprintf "%s: expected %d, got %d" label expected actual)
 
+let expect_string_list label expected actual =
+  if expected <> actual then
+    failwith
+      (Printf.sprintf "%s: expected [%s], got [%s]" label
+         (String.concat "; " expected)
+         (String.concat "; " actual))
+
 let expect_severity label expected actual =
   if expected <> actual then
     failwith (Printf.sprintf "%s: wrong severity" label)
@@ -59,6 +66,14 @@ let find_diagnostic id diagnostics =
   |> List.find_opt (fun diagnostic ->
       String.equal diagnostic.Check.id id)
   |> expect_some ("diagnostic " ^ id)
+
+let expect_one_diagnostic label diagnostics =
+  match diagnostics with
+  | [ diagnostic ] -> diagnostic
+  | _ ->
+      failwith
+        (Printf.sprintf "%s: expected one diagnostic, got %d" label
+           (List.length diagnostics))
 
 let expect_no_diagnostic id diagnostics =
   if
@@ -259,6 +274,40 @@ let test_opam_available_when_version_command_succeeds () =
   if not (Opam.opam_available ~run:(fake_runner responses)) then
     failwith "opam should be available"
 
+let test_parse_active_switch_handles_empty_error_and_normal_output () =
+  (match Opam.parse_active_switch "" with
+  | None -> ()
+  | Some value ->
+      failwith
+        (Printf.sprintf "empty active switch: expected None, got %S"
+           value));
+  (match
+     Opam.parse_active_switch "[ERROR] No switch is currently set\n"
+   with
+  | None -> ()
+  | Some value ->
+      failwith
+        (Printf.sprintf "error active switch: expected None, got %S"
+           value));
+  expect_string "normal active switch" "5.2.0"
+    (expect_some "normal active switch"
+       (Opam.parse_active_switch "5.2.0\n"))
+
+let test_parse_switch_list_trims_marker_and_blank_lines () =
+  expect_string_list "active switch marker" [ "5.2.0"; "4.14.2" ]
+    (Opam.parse_switch_list "* 5.2.0\n4.14.2\n");
+  expect_string_list "switch list whitespace" [ "default"; "5.2.0" ]
+    (Opam.parse_switch_list "\n  default  \n\n * 5.2.0  \n")
+
+let test_parse_installed_packages_reads_names_from_plain_and_short_output
+    () =
+  expect_string_list "installed packages with versions"
+    [ "dune"; "ocamlformat" ]
+    (Opam.parse_installed_packages "dune 3.17.0\nocamlformat 0.26.2\n");
+  expect_string_list "short installed packages"
+    [ "dune"; "ocaml-lsp-server" ]
+    (Opam.parse_installed_packages "dune\nocaml-lsp-server\n")
+
 let test_opam_not_initialized_reports_warning () =
   let responses =
     [
@@ -360,6 +409,150 @@ let test_error_like_switch_show_output_reports_no_active_switch () =
   expect_detail "error-like switch show detail"
     "opam did not report an active switch." active;
   expect_no_diagnostic "opam.env.sync" diagnostics
+
+let linux_switch_bin = "/home/dev/.opam/default/bin"
+
+let test_env_sync_ok_when_expected_tools_resolve_inside_switch () =
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+      ( ("sh", [ "-c"; "command -v dune" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/dune\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml-lsp-server" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml-lsp-server\n", "")
+      );
+      ( ("sh", [ "-c"; "command -v ocamlformat" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocamlformat\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages
+         [ "dune"; "ocaml-lsp-server"; "ocamlformat" ])
+  in
+  let env = expect_one_diagnostic "env sync ok" diagnostics in
+  expect_string "env sync ok id" "opam.env.sync" env.id;
+  expect_severity "env sync ok severity" Check.Ok env.severity;
+  expect_string "env sync ok title"
+    "checked OCaml tools resolve through the active opam switch"
+    env.title;
+  expect_detail "env sync ok detail"
+    ("ocaml resolves to " ^ linux_switch_bin ^ "/ocaml")
+    env
+
+let test_env_sync_warns_when_installed_dune_is_missing_from_path () =
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages [ "dune" ])
+  in
+  let env = expect_one_diagnostic "env sync missing dune" diagnostics in
+  expect_string "env sync missing dune id" "opam.env.sync" env.id;
+  expect_severity "env sync missing dune severity" Check.Warn
+    env.severity;
+  expect_contains "env sync missing dune detail"
+    "Commands missing from PATH: dune."
+    (expect_some "env sync missing dune detail" env.detail)
+
+let test_env_sync_warns_when_ocamlformat_resolves_outside_switch () =
+  let outside = "/usr/local/bin/ocamlformat" in
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+      ( ("sh", [ "-c"; "command -v ocamlformat" ]),
+        (Process.Exited 0, outside ^ "\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages [ "ocamlformat" ])
+  in
+  let env =
+    expect_one_diagnostic "env sync outside ocamlformat" diagnostics
+  in
+  expect_string "env sync outside ocamlformat id" "opam.env.sync" env.id;
+  expect_severity "env sync outside ocamlformat severity" Check.Warn
+    env.severity;
+  let detail =
+    expect_some "env sync outside ocamlformat detail" env.detail
+  in
+  expect_contains "env sync outside heading"
+    "Commands resolving outside the active switch:" detail;
+  expect_contains "env sync outside path"
+    ("ocamlformat: " ^ outside)
+    detail
+
+let test_env_sync_ignores_package_backed_tools_after_package_query_failure
+    () =
+  let failed_packages =
+    result ~stderr:"opam list failed\n" (Process.Exited 12) "opam"
+      [ "list"; "--installed"; "--short" ]
+  in
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Package_query_failed failed_packages)
+  in
+  let env =
+    expect_one_diagnostic "env sync package query failed" diagnostics
+  in
+  expect_string "env sync package query failed id" "opam.env.sync"
+    env.id;
+  expect_severity "env sync package query failed severity" Check.Ok
+    env.severity;
+  expect_string "env sync package query failed title"
+    "checked OCaml tools resolve through the active opam switch"
+    env.title
+
+let test_env_sync_warns_when_active_switch_bin_command_fails () =
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 31, "", "switch bin unavailable\n") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages [ "dune"; "ocamlformat" ])
+  in
+  let env = expect_one_diagnostic "env sync bin failure" diagnostics in
+  expect_string "env sync bin failure id" "opam.env.sync" env.id;
+  expect_severity "env sync bin failure severity" Check.Warn
+    env.severity;
+  expect_string "env sync bin failure title"
+    "active switch bin could not be read" env.title;
+  expect_detail "env sync bin failure detail"
+    "opam var bin returned exit 31: switch bin unavailable" env
 
 let test_opam_env_warns_when_ocaml_resolves_outside_active_switch () =
   let responses =
@@ -505,7 +698,8 @@ let test_opam_env_is_ok_when_installed_switch_tools_are_visible () =
   let env = find_diagnostic "opam.env.sync" diagnostics in
   expect_severity "visible switch tools ok" Check.Ok env.severity;
   expect_string "visible switch tools title"
-    "shell environment appears synced with opam" env.title;
+    "checked OCaml tools resolve through the active opam switch"
+    env.title;
   expect_detail "visible switch tools detail"
     "ocaml resolves to C:\\opam\\default\\bin\\ocaml.exe" env;
   let ocamlformat =
@@ -909,10 +1103,18 @@ let () =
       test_failed_opam_version_check_is_an_error;
       test_missing_opam_skips_opam_checks_as_error;
       test_opam_available_when_version_command_succeeds;
+      test_parse_active_switch_handles_empty_error_and_normal_output;
+      test_parse_switch_list_trims_marker_and_blank_lines;
+      test_parse_installed_packages_reads_names_from_plain_and_short_output;
       test_opam_not_initialized_reports_warning;
       test_switch_show_failure_reports_switch_error;
       test_opam_without_selected_switch_reports_switch_error;
       test_error_like_switch_show_output_reports_no_active_switch;
+      test_env_sync_ok_when_expected_tools_resolve_inside_switch;
+      test_env_sync_warns_when_installed_dune_is_missing_from_path;
+      test_env_sync_warns_when_ocamlformat_resolves_outside_switch;
+      test_env_sync_ignores_package_backed_tools_after_package_query_failure;
+      test_env_sync_warns_when_active_switch_bin_command_fails;
       test_opam_env_warns_when_ocaml_resolves_outside_active_switch;
       test_opam_env_rejects_sibling_path_prefix;
       test_opam_env_warns_when_installed_switch_tools_are_missing_from_path;

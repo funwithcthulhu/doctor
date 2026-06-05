@@ -243,7 +243,9 @@ let env_sync_diagnostic ~(run : Process.runner) os package_state =
               in
               [
                 Check.make ~id:"opam.env.sync"
-                  ~title:"shell environment appears synced with opam"
+                  ~title:
+                    "checked OCaml tools resolve through the active \
+                     opam switch"
                   ~detail Check.Ok;
               ]
           | missing, outside ->
