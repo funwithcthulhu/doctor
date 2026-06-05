@@ -219,6 +219,15 @@ let doctor_plugin_ok_responses =
     (("powershell", []), (Process.Exited 0, "ok\n", ""));
   ]
 
+let doctor_plugin_contract_runner command args =
+  match (command, args) with
+  | "powershell", [ _; _; _; _; _; script ]
+    when contains_substring script "AppModelUnlock" ->
+      result ~stdout:"enabled\n" (Process.Exited 0) command args
+  | "powershell", _ ->
+      result ~stdout:"ok\n" (Process.Exited 0) command args
+  | _ -> fake_runner doctor_plugin_ok_responses command args
+
 let vscode_extension_failure_responses =
   [
     (("code", [ "--version" ]), (Process.Exited 0, "1.90.0\n", ""));
@@ -242,12 +251,7 @@ let emitted_diagnostic_names () =
     Opam.diagnostics
       ~run:(fake_runner package_query_failure_responses)
       Platform.Linux;
-    Opam.doctor_plugin_diagnostics
-      ~run:(fun command args ->
-        match (command, args) with
-        | "powershell", _ ->
-            result ~stdout:"ok\n" (Process.Exited 0) command args
-        | _ -> fake_runner doctor_plugin_ok_responses command args)
+    Opam.doctor_plugin_diagnostics ~run:doctor_plugin_contract_runner
       Platform.Windows;
     Editor.diagnostics ~run:(fake_runner []);
     Editor.diagnostics

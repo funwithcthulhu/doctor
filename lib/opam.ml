@@ -355,6 +355,70 @@ let doctor_plugin_probe ~(run : Process.runner) ~root ~switch_bin =
       doctor_plugin_probe_script ~root ~switch_bin;
     ]
 
+let windows_symlink_probe_script =
+  String.concat "; "
+    [
+      "$path = \
+       'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock'";
+      "$value = (Get-ItemProperty -Path $path -Name \
+       AllowDevelopmentWithoutDevLicense -ErrorAction \
+       SilentlyContinue).AllowDevelopmentWithoutDevLicense";
+      "if ($value -eq 1) { 'enabled' } else { 'disabled' }";
+    ]
+
+let windows_symlink_probe ~(run : Process.runner) =
+  run "powershell"
+    [
+      "-NoProfile";
+      "-NonInteractive";
+      "-ExecutionPolicy";
+      "Bypass";
+      "-Command";
+      windows_symlink_probe_script;
+    ]
+
+let windows_symlink_diagnostic_from_probe result =
+  match first_stdout_line result with
+  | Some "enabled" ->
+      [
+        Check.make ~id:"opam.windows.symlink"
+          ~title:"Windows user symlink support is enabled"
+          ~detail:
+            "Developer Mode symlink support is enabled for this \
+             Windows installation."
+          Check.Ok;
+      ]
+  | Some "disabled" ->
+      [
+        Check.make ~id:"opam.windows.symlink"
+          ~title:"Windows user symlink support may be disabled"
+          ~detail:
+            "The Windows Developer Mode symlink setting is not \
+             enabled. opam plugin entries may be copied instead of \
+             linked."
+          ~suggestion:
+            "Enable Windows Developer Mode or run `opam reinstall \
+             doctor` from an elevated shell."
+          Check.Warn;
+      ]
+  | _ ->
+      [
+        Check.make ~id:"opam.windows.symlink"
+          ~title:"could not inspect Windows symlink support"
+          ~detail:(Process.summary result)
+          ~suggestion:
+            "If opam plugin dispatch fails, check whether Windows \
+             Developer Mode allows user symlink creation."
+          Check.Warn;
+      ]
+
+let windows_symlink_diagnostics ~(run : Process.runner) os =
+  match os with
+  | Platform.Windows ->
+      windows_symlink_probe ~run
+      |> windows_symlink_diagnostic_from_probe
+  | _ -> []
+
 let doctor_plugin_paths ~root ~switch_bin =
   let plugin =
     windows_path
@@ -434,8 +498,16 @@ let doctor_plugin_diagnostics ~(run : Process.runner) os =
           first_stdout_line (run "opam" [ "var"; "bin" ]) )
       with
       | Some root, Some switch_bin ->
-          doctor_plugin_probe ~run ~root ~switch_bin
-          |> doctor_plugin_diagnostic_from_probe ~root ~switch_bin
+          let probe = doctor_plugin_probe ~run ~root ~switch_bin in
+          let plugin =
+            doctor_plugin_diagnostic_from_probe ~root ~switch_bin probe
+          in
+          let symlink =
+            match first_stdout_line probe with
+            | Some "absent" -> []
+            | _ -> windows_symlink_diagnostics ~run os
+          in
+          plugin @ symlink
       | _ -> [])
   | _ -> []
 

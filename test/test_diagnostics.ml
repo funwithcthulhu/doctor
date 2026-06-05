@@ -639,13 +639,18 @@ let test_windows_opam_env_suggestion_matches_shell_wording () =
      cmd.exe: for /f \"tokens=*\" %i in ('opam env') do @%i"
     env
 
-let fake_doctor_plugin_runner probe_state command args =
+let fake_doctor_plugin_runner ?(symlink_state = "enabled") probe_state
+    command args =
   match (command, args) with
   | "opam", [ "var"; "root" ] ->
       result ~stdout:"C:\\opam\n" (Process.Exited 0) command args
   | "opam", [ "var"; "bin" ] ->
       result ~stdout:"C:\\opam\\default\\bin\n" (Process.Exited 0)
         command args
+  | "powershell", [ _; _; _; _; _; script ]
+    when contains_substring script "AppModelUnlock" ->
+      result ~stdout:(symlink_state ^ "\n") (Process.Exited 0) command
+        args
   | "powershell", _ ->
       result ~stdout:(probe_state ^ "\n") (Process.Exited 0) command
         args
@@ -660,6 +665,35 @@ let test_doctor_plugin_probe_script_preserves_powershell_if_chain () =
   if contains_substring script "}; elseif" then
     failwith
       "plugin probe must not separate PowerShell elseif with semicolon"
+
+let test_windows_symlink_probe_reports_enabled () =
+  let diagnostics =
+    Opam.windows_symlink_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok" ~symlink_state:"enabled")
+      Platform.Windows
+  in
+  let symlink = find_diagnostic "opam.windows.symlink" diagnostics in
+  expect_severity "windows symlink enabled" Check.Ok symlink.severity;
+  expect_string "windows symlink enabled title"
+    "Windows user symlink support is enabled" symlink.title
+
+let test_windows_symlink_probe_warns_when_disabled () =
+  let diagnostics =
+    Opam.windows_symlink_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok" ~symlink_state:"disabled")
+      Platform.Windows
+  in
+  let symlink = find_diagnostic "opam.windows.symlink" diagnostics in
+  expect_severity "windows symlink disabled" Check.Warn symlink.severity;
+  expect_string "windows symlink disabled title"
+    "Windows user symlink support may be disabled" symlink.title;
+  expect_contains "windows symlink disabled detail"
+    "opam plugin entries may be copied instead of linked"
+    (expect_some "windows symlink disabled detail" symlink.detail);
+  expect_suggestion "windows symlink disabled suggestion"
+    "Enable Windows Developer Mode or run `opam reinstall doctor` from \
+     an elevated shell."
+    symlink
 
 let test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin
     () =
@@ -680,8 +714,11 @@ let test_windows_doctor_plugin_entry_warns_when_not_symlink () =
       Platform.Windows
   in
   let plugin = find_diagnostic "opam.plugin.doctor" diagnostics in
+  let symlink = find_diagnostic "opam.windows.symlink" diagnostics in
   expect_severity "plugin dispatch copied exe" Check.Warn
     plugin.severity;
+  expect_severity "plugin dispatch symlink support" Check.Ok
+    symlink.severity;
   expect_string "plugin dispatch copied exe title"
     "opam doctor plugin entry is not a symlink" plugin.title;
   expect_contains "plugin dispatch detail"
@@ -715,7 +752,8 @@ let test_doctor_plugin_probe_is_quiet_when_not_installed () =
       ~run:(fake_doctor_plugin_runner "absent")
       Platform.Windows
   in
-  expect_no_diagnostic "opam.plugin.doctor" diagnostics
+  expect_no_diagnostic "opam.plugin.doctor" diagnostics;
+  expect_no_diagnostic "opam.windows.symlink" diagnostics
 
 let test_missing_code_command_skips_vscode_extension_check () =
   let diagnostics = Editor.diagnostics ~run:(fake_runner []) in
@@ -822,6 +860,8 @@ let () =
       test_package_query_failure_is_reported;
       test_windows_opam_env_suggestion_matches_shell_wording;
       test_doctor_plugin_probe_script_preserves_powershell_if_chain;
+      test_windows_symlink_probe_reports_enabled;
+      test_windows_symlink_probe_warns_when_disabled;
       test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin;
       test_windows_doctor_plugin_entry_warns_when_not_symlink;
       test_windows_doctor_plugin_entry_warns_when_target_missing;
