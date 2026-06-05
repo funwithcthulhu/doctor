@@ -1,5 +1,11 @@
 (tests
- (names test_process test_report test_diagnostics test_cli test_contract)
+ (names
+  test_process
+  test_report
+  test_diagnostics
+  test_cli
+  test_contract
+  test_env)
  (libraries doctor unix)
  (deps
   (:doctor ../bin/main.exe)

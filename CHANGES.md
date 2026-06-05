@@ -10,6 +10,7 @@
   entries.
 - Warn when opam Windows runtime directories appear missing from `PATH` for
   plugin dispatch.
+- Warn when `PATH` includes the current directory.
 - Keep the existing `doctor` command and diagnostic behavior unchanged.
 
 ## 0.3.0 - 2026-05-27

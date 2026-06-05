@@ -1,5 +1,6 @@
 module Check = Doctor.Check
 module Editor = Doctor.Editor
+module Env = Doctor.Env
 module Opam = Doctor.Opam
 module Platform = Doctor.Platform
 module Process = Doctor.Process
@@ -241,6 +242,9 @@ let vscode_extension_missing_responses =
     (("code", [ "--list-extensions" ]), (Process.Exited 0, "\n", ""));
   ]
 
+let env_with_current_directory name =
+  match name with "PATH" -> Some "/usr/bin:.:/bin" | _ -> None
+
 let emitted_diagnostic_names () =
   [
     [ Platform.diagnostic Platform.Linux ];
@@ -253,6 +257,7 @@ let emitted_diagnostic_names () =
       Platform.Linux;
     Opam.doctor_plugin_diagnostics ~run:doctor_plugin_contract_runner
       Platform.Windows;
+    Env.diagnostics Platform.Linux ~env:env_with_current_directory;
     Editor.diagnostics ~run:(fake_runner []);
     Editor.diagnostics
       ~run:(fake_runner vscode_extension_failure_responses);

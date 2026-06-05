@@ -6,7 +6,7 @@ let diagnostics ~run os =
   [ Platform.diagnostic os ]
   @ Check.command_diagnostics ~run
   @ Opam.diagnostics ~run os
-  @ Editor.diagnostics ~run
+  @ Env.diagnostics os @ Editor.diagnostics ~run
 
 let run_checks_with ~run ~os json =
   try
