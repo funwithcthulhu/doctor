@@ -5,6 +5,7 @@
 - Add an `opam-doctor` executable so opam can dispatch the tool as
   `opam doctor`.
 - Mark the package with the opam `plugin` flag.
+- Warn about broken Windows `opam doctor` plugin dispatch entries.
 - Keep the existing `doctor` command and diagnostic behavior unchanged.
 
 ## 0.3.0 - 2026-05-27

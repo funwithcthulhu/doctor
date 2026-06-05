@@ -210,6 +210,15 @@ let package_query_failure_responses =
       (Process.Exited 12, "", "opam list failed\n") );
   ]
 
+let doctor_plugin_ok_responses =
+  [
+    (("opam", [ "--version" ]), (Process.Exited 0, "2.2.1\n", ""));
+    (("opam", [ "var"; "root" ]), (Process.Exited 0, "C:\\opam\n", ""));
+    ( ("opam", [ "var"; "bin" ]),
+      (Process.Exited 0, "C:\\opam\\default\\bin\n", "") );
+    (("powershell", []), (Process.Exited 0, "ok\n", ""));
+  ]
+
 let vscode_extension_failure_responses =
   [
     (("code", [ "--version" ]), (Process.Exited 0, "1.90.0\n", ""));
@@ -233,6 +242,13 @@ let emitted_diagnostic_names () =
     Opam.diagnostics
       ~run:(fake_runner package_query_failure_responses)
       Platform.Linux;
+    Opam.doctor_plugin_diagnostics
+      ~run:(fun command args ->
+        match (command, args) with
+        | "powershell", _ ->
+            result ~stdout:"ok\n" (Process.Exited 0) command args
+        | _ -> fake_runner doctor_plugin_ok_responses command args)
+      Platform.Windows;
     Editor.diagnostics ~run:(fake_runner []);
     Editor.diagnostics
       ~run:(fake_runner vscode_extension_failure_responses);

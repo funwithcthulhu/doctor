@@ -300,12 +300,152 @@ let package_diagnostics = function
           Check.Warn;
       ]
 
+let windows_path parent child =
+  let separator =
+    if String.ends_with ~suffix:"\\" parent then "" else "\\"
+  in
+  parent ^ separator ^ child
+
+let powershell_quote value =
+  "'" ^ String.concat "''" (String.split_on_char '\'' value) ^ "'"
+
+let doctor_plugin_probe_script ~root ~switch_bin =
+  let plugin =
+    windows_path
+      (windows_path (windows_path root "plugins") "bin")
+      "opam-doctor.exe"
+  in
+  let target = windows_path switch_bin "opam-doctor.exe" in
+  String.concat "; "
+    [
+      "$plugin = " ^ powershell_quote plugin;
+      "$target = " ^ powershell_quote target;
+    ]
+  ^ "; "
+  ^ String.concat " "
+      [
+        "if (!(Test-Path -LiteralPath $plugin) -and !(Test-Path \
+         -LiteralPath $target)) { 'absent' }";
+        "elseif (!(Test-Path -LiteralPath $plugin)) { 'plugin-missing' \
+         }";
+        "elseif (!(Test-Path -LiteralPath $target)) { 'target-missing' \
+         }";
+        "else { $item = Get-Item -LiteralPath $plugin; if \
+         ($item.LinkType -ne 'SymbolicLink') { 'not-symlink' } else { \
+         $rawTarget = [string]$item.Target; if \
+         ([System.IO.Path]::IsPathRooted($rawTarget)) { $resolved = \
+         [System.IO.Path]::GetFullPath($rawTarget) } else { $resolved \
+         = [System.IO.Path]::GetFullPath((Join-Path (Split-Path \
+         -Parent $plugin) $rawTarget)) }; $expected = \
+         [System.IO.Path]::GetFullPath($target); if \
+         ([string]::Equals($resolved, $expected, \
+         [System.StringComparison]::OrdinalIgnoreCase)) { 'ok' } else \
+         { 'wrong-target'; 'Target: ' + $rawTarget; 'Expected: ' + \
+         $target } } }";
+      ]
+
+let doctor_plugin_probe ~(run : Process.runner) ~root ~switch_bin =
+  run "powershell"
+    [
+      "-NoProfile";
+      "-NonInteractive";
+      "-ExecutionPolicy";
+      "Bypass";
+      "-Command";
+      doctor_plugin_probe_script ~root ~switch_bin;
+    ]
+
+let doctor_plugin_paths ~root ~switch_bin =
+  let plugin =
+    windows_path
+      (windows_path (windows_path root "plugins") "bin")
+      "opam-doctor.exe"
+  in
+  let target = windows_path switch_bin "opam-doctor.exe" in
+  (plugin, target)
+
+let doctor_plugin_detail ~plugin ~target extra =
+  String.concat "\n"
+    ([ "Plugin entry: " ^ plugin; "Switch binary: " ^ target ] @ extra)
+
+let doctor_plugin_reinstall_suggestion =
+  "Enable Windows Developer Mode or use an elevated shell if symlink \
+   creation is unavailable, then run `opam reinstall doctor`."
+
+let doctor_plugin_diagnostic_from_probe ~root ~switch_bin result =
+  let plugin, target = doctor_plugin_paths ~root ~switch_bin in
+  match first_stdout_line result with
+  | Some "absent" -> []
+  | Some "ok" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin dispatch looks usable"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          Check.Ok;
+      ]
+  | Some "plugin-missing" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin entry missing"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          ~suggestion:"opam reinstall doctor" Check.Warn;
+      ]
+  | Some "target-missing" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin target missing"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          ~suggestion:"opam reinstall doctor" Check.Warn;
+      ]
+  | Some "not-symlink" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin entry is not a symlink"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          ~suggestion:doctor_plugin_reinstall_suggestion Check.Warn;
+      ]
+  | Some "wrong-target" ->
+      let extra =
+        match non_empty_lines result.stdout with
+        | _state :: rest -> rest
+        | [] -> []
+      in
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin entry points at a different target"
+          ~detail:(doctor_plugin_detail ~plugin ~target extra)
+          ~suggestion:doctor_plugin_reinstall_suggestion Check.Warn;
+      ]
+  | _ ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"could not inspect opam doctor plugin dispatch"
+          ~detail:(Process.summary result)
+          ~suggestion:
+            "Run `opam doctor version` to test plugin dispatch."
+          Check.Warn;
+      ]
+
+let doctor_plugin_diagnostics ~(run : Process.runner) os =
+  match os with
+  | Platform.Windows -> (
+      match
+        ( first_stdout_line (run "opam" [ "var"; "root" ]),
+          first_stdout_line (run "opam" [ "var"; "bin" ]) )
+      with
+      | Some root, Some switch_bin ->
+          doctor_plugin_probe ~run ~root ~switch_bin
+          |> doctor_plugin_diagnostic_from_probe ~root ~switch_bin
+      | _ -> [])
+  | _ -> []
+
 let diagnostics ~(run : Process.runner) os =
   if opam_available ~run then
     let package_state = read_package_state ~run in
     [ initialized_diagnostic ~run ]
     @ switch_diagnostics ~run os
     @ env_sync_diagnostic ~run os package_state
+    @ doctor_plugin_diagnostics ~run os
     @ package_diagnostics package_state
   else
     [

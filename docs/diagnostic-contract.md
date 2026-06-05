@@ -80,6 +80,7 @@ treated as display text; tools should prefer `name`, `status`, and
 | `opam.switch.active` | Active opam switch state. |
 | `opam.switch.list` | Available opam switches. |
 | `opam.env.sync` | Whether visible switch tools match the active switch. |
+| `opam.plugin.doctor` | Windows opam plugin dispatch state for `opam doctor`. |
 | `opam.package.dune` | Installed `dune` package state. |
 | `opam.package.ocaml-lsp-server` | Installed `ocaml-lsp-server` package state. |
 | `opam.package.ocamlformat` | Installed `ocamlformat` package state. |

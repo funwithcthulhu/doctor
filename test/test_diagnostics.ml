@@ -639,6 +639,84 @@ let test_windows_opam_env_suggestion_matches_shell_wording () =
      cmd.exe: for /f \"tokens=*\" %i in ('opam env') do @%i"
     env
 
+let fake_doctor_plugin_runner probe_state command args =
+  match (command, args) with
+  | "opam", [ "var"; "root" ] ->
+      result ~stdout:"C:\\opam\n" (Process.Exited 0) command args
+  | "opam", [ "var"; "bin" ] ->
+      result ~stdout:"C:\\opam\\default\\bin\n" (Process.Exited 0)
+        command args
+  | "powershell", _ ->
+      result ~stdout:(probe_state ^ "\n") (Process.Exited 0) command
+        args
+  | _ -> result (Process.Spawn_error "not found") command args
+
+let test_doctor_plugin_probe_script_preserves_powershell_if_chain () =
+  let script =
+    Opam.doctor_plugin_probe_script ~root:"C:\\opam"
+      ~switch_bin:"C:\\opam\\default\\bin"
+  in
+  expect_contains "plugin probe uses elseif" " } elseif " script;
+  if contains_substring script "}; elseif" then
+    failwith
+      "plugin probe must not separate PowerShell elseif with semicolon"
+
+let test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin
+    () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok")
+      Platform.Windows
+  in
+  let plugin = find_diagnostic "opam.plugin.doctor" diagnostics in
+  expect_severity "plugin dispatch ok" Check.Ok plugin.severity;
+  expect_string "plugin dispatch ok title"
+    "opam doctor plugin dispatch looks usable" plugin.title
+
+let test_windows_doctor_plugin_entry_warns_when_not_symlink () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "not-symlink")
+      Platform.Windows
+  in
+  let plugin = find_diagnostic "opam.plugin.doctor" diagnostics in
+  expect_severity "plugin dispatch copied exe" Check.Warn
+    plugin.severity;
+  expect_string "plugin dispatch copied exe title"
+    "opam doctor plugin entry is not a symlink" plugin.title;
+  expect_contains "plugin dispatch detail"
+    "Plugin entry: C:\\opam\\plugins\\bin\\opam-doctor.exe"
+    (expect_some "plugin dispatch detail" plugin.detail);
+  expect_contains "plugin dispatch target detail"
+    "Switch binary: C:\\opam\\default\\bin\\opam-doctor.exe"
+    (expect_some "plugin dispatch detail" plugin.detail);
+  expect_suggestion "plugin dispatch copied exe suggestion"
+    "Enable Windows Developer Mode or use an elevated shell if symlink \
+     creation is unavailable, then run `opam reinstall doctor`."
+    plugin
+
+let test_windows_doctor_plugin_entry_warns_when_target_missing () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "target-missing")
+      Platform.Windows
+  in
+  let plugin = find_diagnostic "opam.plugin.doctor" diagnostics in
+  expect_severity "plugin dispatch stale target" Check.Warn
+    plugin.severity;
+  expect_string "plugin dispatch stale target title"
+    "opam doctor plugin target missing" plugin.title;
+  expect_suggestion "plugin dispatch stale target suggestion"
+    "opam reinstall doctor" plugin
+
+let test_doctor_plugin_probe_is_quiet_when_not_installed () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "absent")
+      Platform.Windows
+  in
+  expect_no_diagnostic "opam.plugin.doctor" diagnostics
+
 let test_missing_code_command_skips_vscode_extension_check () =
   let diagnostics = Editor.diagnostics ~run:(fake_runner []) in
   let code = find_diagnostic "editor.vscode.command" diagnostics in
@@ -743,6 +821,11 @@ let () =
       test_similar_package_name_does_not_count_as_installed;
       test_package_query_failure_is_reported;
       test_windows_opam_env_suggestion_matches_shell_wording;
+      test_doctor_plugin_probe_script_preserves_powershell_if_chain;
+      test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin;
+      test_windows_doctor_plugin_entry_warns_when_not_symlink;
+      test_windows_doctor_plugin_entry_warns_when_target_missing;
+      test_doctor_plugin_probe_is_quiet_when_not_installed;
       test_missing_code_command_skips_vscode_extension_check;
       test_vscode_with_ocaml_platform_extension_is_ok;
       test_similar_vscode_extension_name_does_not_match;
