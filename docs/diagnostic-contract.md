@@ -82,6 +82,7 @@ treated as display text; tools should prefer `name`, `status`, and
 | `opam.env.sync` | Whether visible switch tools match the active switch. |
 | `opam.plugin.doctor` | Windows opam plugin dispatch state for `opam doctor`. |
 | `opam.windows.symlink` | Windows user symlink support for opam plugin entries. |
+| `opam.windows.runtime-path` | Windows runtime PATH state for opam plugin dispatch. |
 | `opam.package.dune` | Installed `dune` package state. |
 | `opam.package.ocaml-lsp-server` | Installed `ocaml-lsp-server` package state. |
 | `opam.package.ocamlformat` | Installed `ocamlformat` package state. |

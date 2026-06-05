@@ -639,8 +639,8 @@ let test_windows_opam_env_suggestion_matches_shell_wording () =
      cmd.exe: for /f \"tokens=*\" %i in ('opam env') do @%i"
     env
 
-let fake_doctor_plugin_runner ?(symlink_state = "enabled") probe_state
-    command args =
+let fake_doctor_plugin_runner ?(symlink_state = "enabled")
+    ?(runtime_state = "absent") probe_state command args =
   match (command, args) with
   | "opam", [ "var"; "root" ] ->
       result ~stdout:"C:\\opam\n" (Process.Exited 0) command args
@@ -650,6 +650,10 @@ let fake_doctor_plugin_runner ?(symlink_state = "enabled") probe_state
   | "powershell", [ _; _; _; _; _; script ]
     when contains_substring script "AppModelUnlock" ->
       result ~stdout:(symlink_state ^ "\n") (Process.Exited 0) command
+        args
+  | "powershell", [ _; _; _; _; _; script ]
+    when contains_substring script ".cygwin" ->
+      result ~stdout:(runtime_state ^ "\n") (Process.Exited 0) command
         args
   | "powershell", _ ->
       result ~stdout:(probe_state ^ "\n") (Process.Exited 0) command
@@ -665,6 +669,16 @@ let test_doctor_plugin_probe_script_preserves_powershell_if_chain () =
   if contains_substring script "}; elseif" then
     failwith
       "plugin probe must not separate PowerShell elseif with semicolon"
+
+let test_windows_runtime_path_probe_script_preserves_powershell_if_chain
+    () =
+  let script =
+    Opam.windows_runtime_path_probe_script ~root:"C:\\opam"
+  in
+  expect_contains "runtime probe uses elseif" " } elseif " script;
+  if contains_substring script "}; elseif" then
+    failwith
+      "runtime probe must not separate PowerShell elseif with semicolon"
 
 let test_windows_symlink_probe_reports_enabled () =
   let diagnostics =
@@ -706,6 +720,55 @@ let test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin
   expect_severity "plugin dispatch ok" Check.Ok plugin.severity;
   expect_string "plugin dispatch ok title"
     "opam doctor plugin dispatch looks usable" plugin.title
+
+let test_windows_runtime_path_warns_when_plugin_runtime_dirs_missing ()
+    =
+  let x64 =
+    "C:\\opam\\.cygwin\\root\\usr\\x86_64-w64-mingw32\\sys-root\\mingw\\bin"
+  in
+  let x86 =
+    "C:\\opam\\.cygwin\\root\\usr\\i686-w64-mingw32\\sys-root\\mingw\\bin"
+  in
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:
+        (fake_doctor_plugin_runner "ok"
+           ~runtime_state:("missing\n" ^ x64 ^ "\n" ^ x86))
+      Platform.Windows
+  in
+  let runtime =
+    find_diagnostic "opam.windows.runtime-path" diagnostics
+  in
+  expect_severity "plugin runtime path warning" Check.Warn
+    runtime.severity;
+  expect_string "plugin runtime path warning title"
+    "opam plugin runtime directories may be missing from PATH"
+    runtime.title;
+  let detail =
+    expect_some "plugin runtime path warning detail" runtime.detail
+  in
+  expect_contains "plugin runtime path detail heading"
+    "Runtime directories missing from PATH:" detail;
+  expect_contains "plugin runtime path x64 detail" x64 detail;
+  expect_contains "plugin runtime path x86 detail" x86 detail;
+  expect_suggestion "plugin runtime path suggestion"
+    "Add the missing opam runtime directories to your Windows user \
+     PATH, then open a new shell."
+    runtime
+
+let test_windows_runtime_path_reports_ok_when_runtime_dirs_are_on_path
+    () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok" ~runtime_state:"ok")
+      Platform.Windows
+  in
+  let runtime =
+    find_diagnostic "opam.windows.runtime-path" diagnostics
+  in
+  expect_severity "plugin runtime path ok" Check.Ok runtime.severity;
+  expect_string "plugin runtime path ok title"
+    "opam Windows runtime directories are on PATH" runtime.title
 
 let test_windows_doctor_plugin_entry_warns_when_not_symlink () =
   let diagnostics =
@@ -753,7 +816,8 @@ let test_doctor_plugin_probe_is_quiet_when_not_installed () =
       Platform.Windows
   in
   expect_no_diagnostic "opam.plugin.doctor" diagnostics;
-  expect_no_diagnostic "opam.windows.symlink" diagnostics
+  expect_no_diagnostic "opam.windows.symlink" diagnostics;
+  expect_no_diagnostic "opam.windows.runtime-path" diagnostics
 
 let test_missing_code_command_skips_vscode_extension_check () =
   let diagnostics = Editor.diagnostics ~run:(fake_runner []) in
@@ -860,9 +924,12 @@ let () =
       test_package_query_failure_is_reported;
       test_windows_opam_env_suggestion_matches_shell_wording;
       test_doctor_plugin_probe_script_preserves_powershell_if_chain;
+      test_windows_runtime_path_probe_script_preserves_powershell_if_chain;
       test_windows_symlink_probe_reports_enabled;
       test_windows_symlink_probe_warns_when_disabled;
       test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin;
+      test_windows_runtime_path_warns_when_plugin_runtime_dirs_missing;
+      test_windows_runtime_path_reports_ok_when_runtime_dirs_are_on_path;
       test_windows_doctor_plugin_entry_warns_when_not_symlink;
       test_windows_doctor_plugin_entry_warns_when_target_missing;
       test_doctor_plugin_probe_is_quiet_when_not_installed;

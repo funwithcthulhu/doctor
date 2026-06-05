@@ -309,6 +309,9 @@ let windows_path parent child =
 let powershell_quote value =
   "'" ^ String.concat "''" (String.split_on_char '\'' value) ^ "'"
 
+let powershell_array values =
+  "@(" ^ String.concat ", " (List.map powershell_quote values) ^ ")"
+
 let doctor_plugin_probe_script ~root ~switch_bin =
   let plugin =
     windows_path
@@ -419,6 +422,103 @@ let windows_symlink_diagnostics ~(run : Process.runner) os =
       |> windows_symlink_diagnostic_from_probe
   | _ -> []
 
+let windows_plugin_runtime_dirs root =
+  let usr =
+    windows_path
+      (windows_path (windows_path root ".cygwin") "root")
+      "usr"
+  in
+  let runtime_dir triplet =
+    let sys_root = windows_path (windows_path usr triplet) "sys-root" in
+    windows_path (windows_path sys_root "mingw") "bin"
+  in
+  List.map runtime_dir [ "x86_64-w64-mingw32"; "i686-w64-mingw32" ]
+
+let windows_runtime_path_probe_script ~root =
+  let dirs = windows_plugin_runtime_dirs root in
+  String.concat "; "
+    [
+      "$dirs = " ^ powershell_array dirs;
+      "function Normalize($path) { \
+       [System.IO.Path]::GetFullPath($path).TrimEnd('\\', '/') }";
+      "$pathEntries = @($env:Path -split ';' | Where-Object { $_ -ne \
+       '' } | ForEach-Object { Normalize $_ })";
+      "$existing = @()";
+      "$missing = @()";
+      "foreach ($dir in $dirs) { if (Test-Path -LiteralPath $dir \
+       -PathType Container) { $existing += $dir; $full = Normalize \
+       $dir; $found = $false; foreach ($entry in $pathEntries) { if \
+       ([string]::Equals($entry, $full, \
+       [System.StringComparison]::OrdinalIgnoreCase)) { $found = $true \
+       } }; if (!$found) { $missing += $dir } } }";
+    ]
+  ^ "; "
+  ^ String.concat " "
+      [
+        "if ($existing.Count -eq 0) { 'absent' }";
+        "elseif ($missing.Count -eq 0) { 'ok' }";
+        "else { 'missing'; $missing }";
+      ]
+
+let windows_runtime_path_probe ~(run : Process.runner) ~root =
+  run "powershell"
+    [
+      "-NoProfile";
+      "-NonInteractive";
+      "-ExecutionPolicy";
+      "Bypass";
+      "-Command";
+      windows_runtime_path_probe_script ~root;
+    ]
+
+let windows_runtime_path_diagnostic_from_probe result =
+  match first_stdout_line result with
+  | Some "absent" -> []
+  | Some "ok" ->
+      [
+        Check.make ~id:"opam.windows.runtime-path"
+          ~title:"opam Windows runtime directories are on PATH"
+          ~detail:
+            "The expected opam Windows runtime directories are present \
+             in the current PATH."
+          Check.Ok;
+      ]
+  | Some "missing" ->
+      let missing =
+        match non_empty_lines result.stdout with
+        | _state :: paths -> paths
+        | [] -> []
+      in
+      [
+        Check.make ~id:"opam.windows.runtime-path"
+          ~title:
+            "opam plugin runtime directories may be missing from PATH"
+          ~detail:
+            (String.concat "\n"
+               ("Runtime directories missing from PATH:" :: missing))
+          ~suggestion:
+            "Add the missing opam runtime directories to your Windows \
+             user PATH, then open a new shell."
+          Check.Warn;
+      ]
+  | _ ->
+      [
+        Check.make ~id:"opam.windows.runtime-path"
+          ~title:"could not inspect opam plugin runtime PATH"
+          ~detail:(Process.summary result)
+          ~suggestion:
+            "If `opam doctor` fails to start on Windows, check whether \
+             opam runtime directories are present in PATH."
+          Check.Warn;
+      ]
+
+let windows_runtime_path_diagnostics ~(run : Process.runner) ~root os =
+  match os with
+  | Platform.Windows ->
+      windows_runtime_path_probe ~run ~root
+      |> windows_runtime_path_diagnostic_from_probe
+  | _ -> []
+
 let doctor_plugin_paths ~root ~switch_bin =
   let plugin =
     windows_path
@@ -507,7 +607,12 @@ let doctor_plugin_diagnostics ~(run : Process.runner) os =
             | Some "absent" -> []
             | _ -> windows_symlink_diagnostics ~run os
           in
-          plugin @ symlink
+          let runtime_path =
+            match first_stdout_line probe with
+            | Some "absent" -> []
+            | _ -> windows_runtime_path_diagnostics ~run ~root os
+          in
+          plugin @ symlink @ runtime_path
       | _ -> [])
   | _ -> []
 
