@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - 2026-05-29
+## 0.4.0 - 2026-06-09
 
 - Add an `opam-doctor` executable so opam can dispatch the tool as
   `opam doctor`.

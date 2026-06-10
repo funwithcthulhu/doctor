@@ -11,8 +11,9 @@ shell files, or editor settings.
 It currently checks platform details, core tool versions, opam initialization
 state, active and available switches, whether the resolved `ocaml` appears to
 match the active switch, whether installed switch tools are visible on `PATH`,
-selected opam packages, and the VS Code OCaml Platform extension when `code` is
-available.
+selected opam packages, environment settings known to disturb opam builds,
+Windows opam plugin dispatch state, and the VS Code OCaml Platform extension
+when `code` is available.
 
 The read-only diagnostic contract is described in
 [docs/diagnostic-contract.md](docs/diagnostic-contract.md).
