@@ -1,9 +1,11 @@
 (executable
  (name main)
  (public_name doctor)
+ (modules main)
  (libraries doctor))
 
 (executable
  (name opam_doctor)
  (public_name opam-doctor)
+ (modules opam_doctor)
  (libraries doctor))

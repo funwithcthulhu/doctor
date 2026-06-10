@@ -69,8 +69,14 @@ let test_help_exits_successfully () =
   expect_status "help command status" (Doctor.Process.Exited 0)
     result.status;
   expect_contains "help output"
-    "Run OCaml development environment diagnostics" result.stdout;
-  expect_contains "help output mentions json" "--json" result.stdout
+    "Run OCaml development environment diagnostics" result.stdout
+
+let test_check_help_mentions_json () =
+  let result = run_doctor [ "check"; "--help" ] in
+  expect_status "check help command status" (Doctor.Process.Exited 0)
+    result.status;
+  expect_contains "check help output mentions json" "--json"
+    result.stdout
 
 let test_opam_doctor_help_uses_plugin_binary_name () =
   let result = run_opam_doctor [ "--help" ] in
@@ -104,6 +110,7 @@ let () =
       test_version_display_matches_current;
       test_version_command_prints_current_version;
       test_help_exits_successfully;
+      test_check_help_mentions_json;
       test_opam_doctor_help_uses_plugin_binary_name;
       test_opam_doctor_version_matches_doctor;
       test_invalid_command_exits_nonzero;
