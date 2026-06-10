@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 - 2026-06-09
+
+- Add an `opam-doctor` executable so opam can dispatch the tool as
+  `opam doctor`.
+- Mark the package with the opam `plugin` flag.
+- Warn about broken Windows `opam doctor` plugin dispatch entries.
+- Warn when Windows user symlink support appears disabled for opam plugin
+  entries.
+- Warn when opam Windows runtime directories appear missing from `PATH` for
+  plugin dispatch.
+- Warn when `PATH` includes the current directory.
+- Warn when forced color-output variables or `GREP_OPTIONS` may affect builds.
+- Keep the existing `doctor` command and diagnostic behavior unchanged.
+
 ## 0.3.0 - 2026-05-27
 
 - Improve opam switch environment diagnostics when switch tools are installed

@@ -12,6 +12,8 @@ authors: "Thomas B."
 
 license: "MIT"
 
+flags: plugin
+
 tags: [
   "cli"
   "diagnostics"

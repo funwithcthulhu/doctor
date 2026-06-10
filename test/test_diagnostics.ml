@@ -23,6 +23,13 @@ let expect_int label expected actual =
     failwith
       (Printf.sprintf "%s: expected %d, got %d" label expected actual)
 
+let expect_string_list label expected actual =
+  if expected <> actual then
+    failwith
+      (Printf.sprintf "%s: expected [%s], got [%s]" label
+         (String.concat "; " expected)
+         (String.concat "; " actual))
+
 let expect_severity label expected actual =
   if expected <> actual then
     failwith (Printf.sprintf "%s: wrong severity" label)
@@ -59,6 +66,14 @@ let find_diagnostic id diagnostics =
   |> List.find_opt (fun diagnostic ->
       String.equal diagnostic.Check.id id)
   |> expect_some ("diagnostic " ^ id)
+
+let expect_one_diagnostic label diagnostics =
+  match diagnostics with
+  | [ diagnostic ] -> diagnostic
+  | _ ->
+      failwith
+        (Printf.sprintf "%s: expected one diagnostic, got %d" label
+           (List.length diagnostics))
 
 let expect_no_diagnostic id diagnostics =
   if
@@ -259,6 +274,40 @@ let test_opam_available_when_version_command_succeeds () =
   if not (Opam.opam_available ~run:(fake_runner responses)) then
     failwith "opam should be available"
 
+let test_parse_active_switch_handles_empty_error_and_normal_output () =
+  (match Opam.parse_active_switch "" with
+  | None -> ()
+  | Some value ->
+      failwith
+        (Printf.sprintf "empty active switch: expected None, got %S"
+           value));
+  (match
+     Opam.parse_active_switch "[ERROR] No switch is currently set\n"
+   with
+  | None -> ()
+  | Some value ->
+      failwith
+        (Printf.sprintf "error active switch: expected None, got %S"
+           value));
+  expect_string "normal active switch" "5.2.0"
+    (expect_some "normal active switch"
+       (Opam.parse_active_switch "5.2.0\n"))
+
+let test_parse_switch_list_trims_marker_and_blank_lines () =
+  expect_string_list "active switch marker" [ "5.2.0"; "4.14.2" ]
+    (Opam.parse_switch_list "* 5.2.0\n4.14.2\n");
+  expect_string_list "switch list whitespace" [ "default"; "5.2.0" ]
+    (Opam.parse_switch_list "\n  default  \n\n * 5.2.0  \n")
+
+let test_parse_installed_packages_reads_names_from_plain_and_short_output
+    () =
+  expect_string_list "installed packages with versions"
+    [ "dune"; "ocamlformat" ]
+    (Opam.parse_installed_packages "dune 3.17.0\nocamlformat 0.26.2\n");
+  expect_string_list "short installed packages"
+    [ "dune"; "ocaml-lsp-server" ]
+    (Opam.parse_installed_packages "dune\nocaml-lsp-server\n")
+
 let test_opam_not_initialized_reports_warning () =
   let responses =
     [
@@ -360,6 +409,150 @@ let test_error_like_switch_show_output_reports_no_active_switch () =
   expect_detail "error-like switch show detail"
     "opam did not report an active switch." active;
   expect_no_diagnostic "opam.env.sync" diagnostics
+
+let linux_switch_bin = "/home/dev/.opam/default/bin"
+
+let test_env_sync_ok_when_expected_tools_resolve_inside_switch () =
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+      ( ("sh", [ "-c"; "command -v dune" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/dune\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml-lsp-server" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml-lsp-server\n", "")
+      );
+      ( ("sh", [ "-c"; "command -v ocamlformat" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocamlformat\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages
+         [ "dune"; "ocaml-lsp-server"; "ocamlformat" ])
+  in
+  let env = expect_one_diagnostic "env sync ok" diagnostics in
+  expect_string "env sync ok id" "opam.env.sync" env.id;
+  expect_severity "env sync ok severity" Check.Ok env.severity;
+  expect_string "env sync ok title"
+    "checked OCaml tools resolve through the active opam switch"
+    env.title;
+  expect_detail "env sync ok detail"
+    ("ocaml resolves to " ^ linux_switch_bin ^ "/ocaml")
+    env
+
+let test_env_sync_warns_when_installed_dune_is_missing_from_path () =
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages [ "dune" ])
+  in
+  let env = expect_one_diagnostic "env sync missing dune" diagnostics in
+  expect_string "env sync missing dune id" "opam.env.sync" env.id;
+  expect_severity "env sync missing dune severity" Check.Warn
+    env.severity;
+  expect_contains "env sync missing dune detail"
+    "Commands missing from PATH: dune."
+    (expect_some "env sync missing dune detail" env.detail)
+
+let test_env_sync_warns_when_ocamlformat_resolves_outside_switch () =
+  let outside = "/usr/local/bin/ocamlformat" in
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+      ( ("sh", [ "-c"; "command -v ocamlformat" ]),
+        (Process.Exited 0, outside ^ "\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages [ "ocamlformat" ])
+  in
+  let env =
+    expect_one_diagnostic "env sync outside ocamlformat" diagnostics
+  in
+  expect_string "env sync outside ocamlformat id" "opam.env.sync" env.id;
+  expect_severity "env sync outside ocamlformat severity" Check.Warn
+    env.severity;
+  let detail =
+    expect_some "env sync outside ocamlformat detail" env.detail
+  in
+  expect_contains "env sync outside heading"
+    "Commands resolving outside the active switch:" detail;
+  expect_contains "env sync outside path"
+    ("ocamlformat: " ^ outside)
+    detail
+
+let test_env_sync_ignores_package_backed_tools_after_package_query_failure
+    () =
+  let failed_packages =
+    result ~stderr:"opam list failed\n" (Process.Exited 12) "opam"
+      [ "list"; "--installed"; "--short" ]
+  in
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 0, linux_switch_bin ^ "\n", "") );
+      ( ("sh", [ "-c"; "command -v ocaml" ]),
+        (Process.Exited 0, linux_switch_bin ^ "/ocaml\n", "") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Package_query_failed failed_packages)
+  in
+  let env =
+    expect_one_diagnostic "env sync package query failed" diagnostics
+  in
+  expect_string "env sync package query failed id" "opam.env.sync"
+    env.id;
+  expect_severity "env sync package query failed severity" Check.Ok
+    env.severity;
+  expect_string "env sync package query failed title"
+    "checked OCaml tools resolve through the active opam switch"
+    env.title
+
+let test_env_sync_warns_when_active_switch_bin_command_fails () =
+  let responses =
+    [
+      ( ("opam", [ "switch"; "show" ]),
+        (Process.Exited 0, "default\n", "") );
+      ( ("opam", [ "var"; "bin" ]),
+        (Process.Exited 31, "", "switch bin unavailable\n") );
+    ]
+  in
+  let diagnostics =
+    Opam.env_sync_diagnostic ~run:(fake_runner responses) Platform.Linux
+      (Opam.Installed_packages [ "dune"; "ocamlformat" ])
+  in
+  let env = expect_one_diagnostic "env sync bin failure" diagnostics in
+  expect_string "env sync bin failure id" "opam.env.sync" env.id;
+  expect_severity "env sync bin failure severity" Check.Warn
+    env.severity;
+  expect_string "env sync bin failure title"
+    "active switch bin could not be read" env.title;
+  expect_detail "env sync bin failure detail"
+    "opam var bin returned exit 31: switch bin unavailable" env
 
 let test_opam_env_warns_when_ocaml_resolves_outside_active_switch () =
   let responses =
@@ -505,7 +698,8 @@ let test_opam_env_is_ok_when_installed_switch_tools_are_visible () =
   let env = find_diagnostic "opam.env.sync" diagnostics in
   expect_severity "visible switch tools ok" Check.Ok env.severity;
   expect_string "visible switch tools title"
-    "shell environment appears synced with opam" env.title;
+    "checked OCaml tools resolve through the active opam switch"
+    env.title;
   expect_detail "visible switch tools detail"
     "ocaml resolves to C:\\opam\\default\\bin\\ocaml.exe" env;
   let ocamlformat =
@@ -639,6 +833,186 @@ let test_windows_opam_env_suggestion_matches_shell_wording () =
      cmd.exe: for /f \"tokens=*\" %i in ('opam env') do @%i"
     env
 
+let fake_doctor_plugin_runner ?(symlink_state = "enabled")
+    ?(runtime_state = "absent") probe_state command args =
+  match (command, args) with
+  | "opam", [ "var"; "root" ] ->
+      result ~stdout:"C:\\opam\n" (Process.Exited 0) command args
+  | "opam", [ "var"; "bin" ] ->
+      result ~stdout:"C:\\opam\\default\\bin\n" (Process.Exited 0)
+        command args
+  | "powershell", [ _; _; _; _; _; script ]
+    when contains_substring script "AppModelUnlock" ->
+      result ~stdout:(symlink_state ^ "\n") (Process.Exited 0) command
+        args
+  | "powershell", [ _; _; _; _; _; script ]
+    when contains_substring script ".cygwin" ->
+      result ~stdout:(runtime_state ^ "\n") (Process.Exited 0) command
+        args
+  | "powershell", _ ->
+      result ~stdout:(probe_state ^ "\n") (Process.Exited 0) command
+        args
+  | _ -> result (Process.Spawn_error "not found") command args
+
+let test_doctor_plugin_probe_script_preserves_powershell_if_chain () =
+  let script =
+    Opam.doctor_plugin_probe_script ~root:"C:\\opam"
+      ~switch_bin:"C:\\opam\\default\\bin"
+  in
+  expect_contains "plugin probe uses elseif" " } elseif " script;
+  if contains_substring script "}; elseif" then
+    failwith
+      "plugin probe must not separate PowerShell elseif with semicolon"
+
+let test_windows_runtime_path_probe_script_preserves_powershell_if_chain
+    () =
+  let script =
+    Opam.windows_runtime_path_probe_script ~root:"C:\\opam"
+  in
+  expect_contains "runtime probe uses elseif" " } elseif " script;
+  if contains_substring script "}; elseif" then
+    failwith
+      "runtime probe must not separate PowerShell elseif with semicolon"
+
+let test_windows_symlink_probe_reports_enabled () =
+  let diagnostics =
+    Opam.windows_symlink_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok" ~symlink_state:"enabled")
+      Platform.Windows
+  in
+  let symlink = find_diagnostic "opam.windows.symlink" diagnostics in
+  expect_severity "windows symlink enabled" Check.Ok symlink.severity;
+  expect_string "windows symlink enabled title"
+    "Windows user symlink support is enabled" symlink.title
+
+let test_windows_symlink_probe_warns_when_disabled () =
+  let diagnostics =
+    Opam.windows_symlink_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok" ~symlink_state:"disabled")
+      Platform.Windows
+  in
+  let symlink = find_diagnostic "opam.windows.symlink" diagnostics in
+  expect_severity "windows symlink disabled" Check.Warn symlink.severity;
+  expect_string "windows symlink disabled title"
+    "Windows user symlink support may be disabled" symlink.title;
+  expect_contains "windows symlink disabled detail"
+    "opam plugin entries may be copied instead of linked"
+    (expect_some "windows symlink disabled detail" symlink.detail);
+  expect_suggestion "windows symlink disabled suggestion"
+    "Enable Windows Developer Mode or run `opam reinstall doctor` from \
+     an elevated shell."
+    symlink
+
+let test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin
+    () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok")
+      Platform.Windows
+  in
+  let plugin = find_diagnostic "opam.plugin.doctor" diagnostics in
+  expect_severity "plugin dispatch ok" Check.Ok plugin.severity;
+  expect_string "plugin dispatch ok title"
+    "opam doctor plugin dispatch looks usable" plugin.title
+
+let test_windows_runtime_path_warns_when_plugin_runtime_dirs_missing ()
+    =
+  let x64 =
+    "C:\\opam\\.cygwin\\root\\usr\\x86_64-w64-mingw32\\sys-root\\mingw\\bin"
+  in
+  let x86 =
+    "C:\\opam\\.cygwin\\root\\usr\\i686-w64-mingw32\\sys-root\\mingw\\bin"
+  in
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:
+        (fake_doctor_plugin_runner "ok"
+           ~runtime_state:("missing\n" ^ x64 ^ "\n" ^ x86))
+      Platform.Windows
+  in
+  let runtime =
+    find_diagnostic "opam.windows.runtime-path" diagnostics
+  in
+  expect_severity "plugin runtime path warning" Check.Warn
+    runtime.severity;
+  expect_string "plugin runtime path warning title"
+    "opam plugin runtime directories may be missing from PATH"
+    runtime.title;
+  let detail =
+    expect_some "plugin runtime path warning detail" runtime.detail
+  in
+  expect_contains "plugin runtime path detail heading"
+    "Runtime directories missing from PATH:" detail;
+  expect_contains "plugin runtime path x64 detail" x64 detail;
+  expect_contains "plugin runtime path x86 detail" x86 detail;
+  expect_suggestion "plugin runtime path suggestion"
+    "Add the missing opam runtime directories to your Windows user \
+     PATH, then open a new shell."
+    runtime
+
+let test_windows_runtime_path_reports_ok_when_runtime_dirs_are_on_path
+    () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "ok" ~runtime_state:"ok")
+      Platform.Windows
+  in
+  let runtime =
+    find_diagnostic "opam.windows.runtime-path" diagnostics
+  in
+  expect_severity "plugin runtime path ok" Check.Ok runtime.severity;
+  expect_string "plugin runtime path ok title"
+    "opam Windows runtime directories are on PATH" runtime.title
+
+let test_windows_doctor_plugin_entry_warns_when_not_symlink () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "not-symlink")
+      Platform.Windows
+  in
+  let plugin = find_diagnostic "opam.plugin.doctor" diagnostics in
+  let symlink = find_diagnostic "opam.windows.symlink" diagnostics in
+  expect_severity "plugin dispatch copied exe" Check.Warn
+    plugin.severity;
+  expect_severity "plugin dispatch symlink support" Check.Ok
+    symlink.severity;
+  expect_string "plugin dispatch copied exe title"
+    "opam doctor plugin entry is not a symlink" plugin.title;
+  expect_contains "plugin dispatch detail"
+    "Plugin entry: C:\\opam\\plugins\\bin\\opam-doctor.exe"
+    (expect_some "plugin dispatch detail" plugin.detail);
+  expect_contains "plugin dispatch target detail"
+    "Switch binary: C:\\opam\\default\\bin\\opam-doctor.exe"
+    (expect_some "plugin dispatch detail" plugin.detail);
+  expect_suggestion "plugin dispatch copied exe suggestion"
+    "Enable Windows Developer Mode or use an elevated shell if symlink \
+     creation is unavailable, then run `opam reinstall doctor`."
+    plugin
+
+let test_windows_doctor_plugin_entry_warns_when_target_missing () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "target-missing")
+      Platform.Windows
+  in
+  let plugin = find_diagnostic "opam.plugin.doctor" diagnostics in
+  expect_severity "plugin dispatch stale target" Check.Warn
+    plugin.severity;
+  expect_string "plugin dispatch stale target title"
+    "opam doctor plugin target missing" plugin.title;
+  expect_suggestion "plugin dispatch stale target suggestion"
+    "opam reinstall doctor" plugin
+
+let test_doctor_plugin_probe_is_quiet_when_not_installed () =
+  let diagnostics =
+    Opam.doctor_plugin_diagnostics
+      ~run:(fake_doctor_plugin_runner "absent")
+      Platform.Windows
+  in
+  expect_no_diagnostic "opam.plugin.doctor" diagnostics;
+  expect_no_diagnostic "opam.windows.symlink" diagnostics;
+  expect_no_diagnostic "opam.windows.runtime-path" diagnostics
+
 let test_missing_code_command_skips_vscode_extension_check () =
   let diagnostics = Editor.diagnostics ~run:(fake_runner []) in
   let code = find_diagnostic "editor.vscode.command" diagnostics in
@@ -729,10 +1103,18 @@ let () =
       test_failed_opam_version_check_is_an_error;
       test_missing_opam_skips_opam_checks_as_error;
       test_opam_available_when_version_command_succeeds;
+      test_parse_active_switch_handles_empty_error_and_normal_output;
+      test_parse_switch_list_trims_marker_and_blank_lines;
+      test_parse_installed_packages_reads_names_from_plain_and_short_output;
       test_opam_not_initialized_reports_warning;
       test_switch_show_failure_reports_switch_error;
       test_opam_without_selected_switch_reports_switch_error;
       test_error_like_switch_show_output_reports_no_active_switch;
+      test_env_sync_ok_when_expected_tools_resolve_inside_switch;
+      test_env_sync_warns_when_installed_dune_is_missing_from_path;
+      test_env_sync_warns_when_ocamlformat_resolves_outside_switch;
+      test_env_sync_ignores_package_backed_tools_after_package_query_failure;
+      test_env_sync_warns_when_active_switch_bin_command_fails;
       test_opam_env_warns_when_ocaml_resolves_outside_active_switch;
       test_opam_env_rejects_sibling_path_prefix;
       test_opam_env_warns_when_installed_switch_tools_are_missing_from_path;
@@ -743,6 +1125,16 @@ let () =
       test_similar_package_name_does_not_count_as_installed;
       test_package_query_failure_is_reported;
       test_windows_opam_env_suggestion_matches_shell_wording;
+      test_doctor_plugin_probe_script_preserves_powershell_if_chain;
+      test_windows_runtime_path_probe_script_preserves_powershell_if_chain;
+      test_windows_symlink_probe_reports_enabled;
+      test_windows_symlink_probe_warns_when_disabled;
+      test_windows_doctor_plugin_entry_is_ok_when_symlink_points_to_switch_bin;
+      test_windows_runtime_path_warns_when_plugin_runtime_dirs_missing;
+      test_windows_runtime_path_reports_ok_when_runtime_dirs_are_on_path;
+      test_windows_doctor_plugin_entry_warns_when_not_symlink;
+      test_windows_doctor_plugin_entry_warns_when_target_missing;
+      test_doctor_plugin_probe_is_quiet_when_not_installed;
       test_missing_code_command_skips_vscode_extension_check;
       test_vscode_with_ocaml_platform_extension_is_ok;
       test_similar_vscode_extension_name_does_not_match;

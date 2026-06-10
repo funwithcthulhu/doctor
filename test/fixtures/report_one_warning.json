@@ -1,0 +1,14 @@
+{
+  "summary": {
+    "status": "warn",
+    "exit_code": 1
+  },
+  "diagnostics": [
+    {
+      "name": "command.ocamlformat",
+      "status": "warn",
+      "message": "ocamlformat not installed",
+      "details": ["The `ocamlformat` command is not available on PATH.", "Suggested fix: opam install ocamlformat"]
+    }
+  ]
+}

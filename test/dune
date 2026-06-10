@@ -1,6 +1,14 @@
 (tests
- (names test_process test_report test_diagnostics test_cli)
- (libraries doctor)
+ (names
+  test_process
+  test_report
+  test_diagnostics
+  test_cli
+  test_contract
+  test_env)
+ (libraries doctor unix)
  (deps
   (:doctor ../bin/main.exe)
+  (:opam_doctor ../bin/opam_doctor.exe)
+  ../docs/diagnostic-contract.md
   (source_tree fixtures)))

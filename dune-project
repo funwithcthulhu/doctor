@@ -1,7 +1,7 @@
 (lang dune 3.11)
 
 (name doctor)
-(version 0.3.0)
+(version 0.4.0)
 
 (source
  (github funwithcthulhu/doctor))

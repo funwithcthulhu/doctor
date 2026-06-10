@@ -1,0 +1,2 @@
+PowerShell: (& opam env) -split '\r?\n' | ForEach-Object { Invoke-Expression $_ }
+cmd.exe: for /f "tokens=*" %i in ('opam env') do @%i

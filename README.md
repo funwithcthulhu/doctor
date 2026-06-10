@@ -11,8 +11,9 @@ shell files, or editor settings.
 It currently checks platform details, core tool versions, opam initialization
 state, active and available switches, whether the resolved `ocaml` appears to
 match the active switch, whether installed switch tools are visible on `PATH`,
-selected opam packages, and the VS Code OCaml Platform extension when `code` is
-available.
+selected opam packages, environment settings known to disturb opam builds,
+Windows opam plugin dispatch state, and the VS Code OCaml Platform extension
+when `code` is available.
 
 The read-only diagnostic contract is described in
 [docs/diagnostic-contract.md](docs/diagnostic-contract.md).
@@ -51,6 +52,13 @@ doctor check
 doctor check --json
 doctor version
 doctor --help
+```
+
+The package also installs `opam-doctor`. When installed through opam, the same
+CLI is available as an opam plugin:
+
+```console
+opam doctor check
 ```
 
 `doctor check` prints a text report:
@@ -93,31 +101,13 @@ $ doctor check --json
 }
 ```
 
-Diagnostic `name` values are intended to be stable for scripts. Current names:
-
-- `platform.os`
-- `command.opam`
-- `command.ocaml`
-- `command.dune`
-- `command.ocaml-lsp-server`
-- `command.ocamlformat`
-- `opam.initialized`
-- `opam.switch.active`
-- `opam.switch.list`
-- `opam.env.sync`
-- `opam.package.dune`
-- `opam.package.ocaml-lsp-server`
-- `opam.package.ocamlformat`
-- `opam.package.utop`
-- `opam.packages`
-- `editor.vscode.command`
-- `editor.vscode.ocaml-platform`
-- `editor.vscode.extensions`
+Diagnostic `name` values are intended to be stable for scripts. The current
+names are listed in [docs/diagnostic-contract.md](docs/diagnostic-contract.md).
 
 `doctor version` prints:
 
 ```console
-doctor 0.3.0
+doctor 0.4.0
 ```
 
 ## Exit Codes

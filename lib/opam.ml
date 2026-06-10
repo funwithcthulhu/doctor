@@ -243,7 +243,9 @@ let env_sync_diagnostic ~(run : Process.runner) os package_state =
               in
               [
                 Check.make ~id:"opam.env.sync"
-                  ~title:"shell environment appears synced with opam"
+                  ~title:
+                    "checked OCaml tools resolve through the active \
+                     opam switch"
                   ~detail Check.Ok;
               ]
           | missing, outside ->
@@ -300,12 +302,329 @@ let package_diagnostics = function
           Check.Warn;
       ]
 
+let windows_path parent child =
+  let separator =
+    if String.ends_with ~suffix:"\\" parent then "" else "\\"
+  in
+  parent ^ separator ^ child
+
+let powershell_quote value =
+  "'" ^ String.concat "''" (String.split_on_char '\'' value) ^ "'"
+
+let powershell_array values =
+  "@(" ^ String.concat ", " (List.map powershell_quote values) ^ ")"
+
+let doctor_plugin_probe_script ~root ~switch_bin =
+  let plugin =
+    windows_path
+      (windows_path (windows_path root "plugins") "bin")
+      "opam-doctor.exe"
+  in
+  let target = windows_path switch_bin "opam-doctor.exe" in
+  String.concat "; "
+    [
+      "$plugin = " ^ powershell_quote plugin;
+      "$target = " ^ powershell_quote target;
+    ]
+  ^ "; "
+  ^ String.concat " "
+      [
+        "if (!(Test-Path -LiteralPath $plugin) -and !(Test-Path \
+         -LiteralPath $target)) { 'absent' }";
+        "elseif (!(Test-Path -LiteralPath $plugin)) { 'plugin-missing' \
+         }";
+        "elseif (!(Test-Path -LiteralPath $target)) { 'target-missing' \
+         }";
+        "else { $item = Get-Item -LiteralPath $plugin; if \
+         ($item.LinkType -ne 'SymbolicLink') { 'not-symlink' } else { \
+         $rawTarget = [string]$item.Target; if \
+         ([System.IO.Path]::IsPathRooted($rawTarget)) { $resolved = \
+         [System.IO.Path]::GetFullPath($rawTarget) } else { $resolved \
+         = [System.IO.Path]::GetFullPath((Join-Path (Split-Path \
+         -Parent $plugin) $rawTarget)) }; $expected = \
+         [System.IO.Path]::GetFullPath($target); if \
+         ([string]::Equals($resolved, $expected, \
+         [System.StringComparison]::OrdinalIgnoreCase)) { 'ok' } else \
+         { 'wrong-target'; 'Target: ' + $rawTarget; 'Expected: ' + \
+         $target } } }";
+      ]
+
+let doctor_plugin_probe ~(run : Process.runner) ~root ~switch_bin =
+  run "powershell"
+    [
+      "-NoProfile";
+      "-NonInteractive";
+      "-ExecutionPolicy";
+      "Bypass";
+      "-Command";
+      doctor_plugin_probe_script ~root ~switch_bin;
+    ]
+
+let windows_symlink_probe_script =
+  String.concat "; "
+    [
+      "$path = \
+       'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\AppModelUnlock'";
+      "$value = (Get-ItemProperty -Path $path -Name \
+       AllowDevelopmentWithoutDevLicense -ErrorAction \
+       SilentlyContinue).AllowDevelopmentWithoutDevLicense";
+      "if ($value -eq 1) { 'enabled' } else { 'disabled' }";
+    ]
+
+let windows_symlink_probe ~(run : Process.runner) =
+  run "powershell"
+    [
+      "-NoProfile";
+      "-NonInteractive";
+      "-ExecutionPolicy";
+      "Bypass";
+      "-Command";
+      windows_symlink_probe_script;
+    ]
+
+let windows_symlink_diagnostic_from_probe result =
+  match first_stdout_line result with
+  | Some "enabled" ->
+      [
+        Check.make ~id:"opam.windows.symlink"
+          ~title:"Windows user symlink support is enabled"
+          ~detail:
+            "Developer Mode symlink support is enabled for this \
+             Windows installation."
+          Check.Ok;
+      ]
+  | Some "disabled" ->
+      [
+        Check.make ~id:"opam.windows.symlink"
+          ~title:"Windows user symlink support may be disabled"
+          ~detail:
+            "The Windows Developer Mode symlink setting is not \
+             enabled. opam plugin entries may be copied instead of \
+             linked."
+          ~suggestion:
+            "Enable Windows Developer Mode or run `opam reinstall \
+             doctor` from an elevated shell."
+          Check.Warn;
+      ]
+  | _ ->
+      [
+        Check.make ~id:"opam.windows.symlink"
+          ~title:"could not inspect Windows symlink support"
+          ~detail:(Process.summary result)
+          ~suggestion:
+            "If opam plugin dispatch fails, check whether Windows \
+             Developer Mode allows user symlink creation."
+          Check.Warn;
+      ]
+
+let windows_symlink_diagnostics ~(run : Process.runner) os =
+  match os with
+  | Platform.Windows ->
+      windows_symlink_probe ~run
+      |> windows_symlink_diagnostic_from_probe
+  | _ -> []
+
+let windows_plugin_runtime_dirs root =
+  let usr =
+    windows_path
+      (windows_path (windows_path root ".cygwin") "root")
+      "usr"
+  in
+  let runtime_dir triplet =
+    let sys_root = windows_path (windows_path usr triplet) "sys-root" in
+    windows_path (windows_path sys_root "mingw") "bin"
+  in
+  List.map runtime_dir [ "x86_64-w64-mingw32"; "i686-w64-mingw32" ]
+
+let windows_runtime_path_probe_script ~root =
+  let dirs = windows_plugin_runtime_dirs root in
+  String.concat "; "
+    [
+      "$dirs = " ^ powershell_array dirs;
+      "function Normalize($path) { \
+       [System.IO.Path]::GetFullPath($path).TrimEnd('\\', '/') }";
+      "$pathEntries = @($env:Path -split ';' | Where-Object { $_ -ne \
+       '' } | ForEach-Object { Normalize $_ })";
+      "$existing = @()";
+      "$missing = @()";
+      "foreach ($dir in $dirs) { if (Test-Path -LiteralPath $dir \
+       -PathType Container) { $existing += $dir; $full = Normalize \
+       $dir; $found = $false; foreach ($entry in $pathEntries) { if \
+       ([string]::Equals($entry, $full, \
+       [System.StringComparison]::OrdinalIgnoreCase)) { $found = $true \
+       } }; if (!$found) { $missing += $dir } } }";
+    ]
+  ^ "; "
+  ^ String.concat " "
+      [
+        "if ($existing.Count -eq 0) { 'absent' }";
+        "elseif ($missing.Count -eq 0) { 'ok' }";
+        "else { 'missing'; $missing }";
+      ]
+
+let windows_runtime_path_probe ~(run : Process.runner) ~root =
+  run "powershell"
+    [
+      "-NoProfile";
+      "-NonInteractive";
+      "-ExecutionPolicy";
+      "Bypass";
+      "-Command";
+      windows_runtime_path_probe_script ~root;
+    ]
+
+let windows_runtime_path_diagnostic_from_probe result =
+  match first_stdout_line result with
+  | Some "absent" -> []
+  | Some "ok" ->
+      [
+        Check.make ~id:"opam.windows.runtime-path"
+          ~title:"opam Windows runtime directories are on PATH"
+          ~detail:
+            "The expected opam Windows runtime directories are present \
+             in the current PATH."
+          Check.Ok;
+      ]
+  | Some "missing" ->
+      let missing =
+        match non_empty_lines result.stdout with
+        | _state :: paths -> paths
+        | [] -> []
+      in
+      [
+        Check.make ~id:"opam.windows.runtime-path"
+          ~title:
+            "opam plugin runtime directories may be missing from PATH"
+          ~detail:
+            (String.concat "\n"
+               ("Runtime directories missing from PATH:" :: missing))
+          ~suggestion:
+            "Add the missing opam runtime directories to your Windows \
+             user PATH, then open a new shell."
+          Check.Warn;
+      ]
+  | _ ->
+      [
+        Check.make ~id:"opam.windows.runtime-path"
+          ~title:"could not inspect opam plugin runtime PATH"
+          ~detail:(Process.summary result)
+          ~suggestion:
+            "If `opam doctor` fails to start on Windows, check whether \
+             opam runtime directories are present in PATH."
+          Check.Warn;
+      ]
+
+let windows_runtime_path_diagnostics ~(run : Process.runner) ~root os =
+  match os with
+  | Platform.Windows ->
+      windows_runtime_path_probe ~run ~root
+      |> windows_runtime_path_diagnostic_from_probe
+  | _ -> []
+
+let doctor_plugin_paths ~root ~switch_bin =
+  let plugin =
+    windows_path
+      (windows_path (windows_path root "plugins") "bin")
+      "opam-doctor.exe"
+  in
+  let target = windows_path switch_bin "opam-doctor.exe" in
+  (plugin, target)
+
+let doctor_plugin_detail ~plugin ~target extra =
+  String.concat "\n"
+    ([ "Plugin entry: " ^ plugin; "Switch binary: " ^ target ] @ extra)
+
+let doctor_plugin_reinstall_suggestion =
+  "Enable Windows Developer Mode or use an elevated shell if symlink \
+   creation is unavailable, then run `opam reinstall doctor`."
+
+let doctor_plugin_diagnostic_from_probe ~root ~switch_bin result =
+  let plugin, target = doctor_plugin_paths ~root ~switch_bin in
+  match first_stdout_line result with
+  | Some "absent" -> []
+  | Some "ok" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin dispatch looks usable"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          Check.Ok;
+      ]
+  | Some "plugin-missing" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin entry missing"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          ~suggestion:"opam reinstall doctor" Check.Warn;
+      ]
+  | Some "target-missing" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin target missing"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          ~suggestion:"opam reinstall doctor" Check.Warn;
+      ]
+  | Some "not-symlink" ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin entry is not a symlink"
+          ~detail:(doctor_plugin_detail ~plugin ~target [])
+          ~suggestion:doctor_plugin_reinstall_suggestion Check.Warn;
+      ]
+  | Some "wrong-target" ->
+      let extra =
+        match non_empty_lines result.stdout with
+        | _state :: rest -> rest
+        | [] -> []
+      in
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"opam doctor plugin entry points at a different target"
+          ~detail:(doctor_plugin_detail ~plugin ~target extra)
+          ~suggestion:doctor_plugin_reinstall_suggestion Check.Warn;
+      ]
+  | _ ->
+      [
+        Check.make ~id:"opam.plugin.doctor"
+          ~title:"could not inspect opam doctor plugin dispatch"
+          ~detail:(Process.summary result)
+          ~suggestion:
+            "Run `opam doctor version` to test plugin dispatch."
+          Check.Warn;
+      ]
+
+let doctor_plugin_diagnostics ~(run : Process.runner) os =
+  match os with
+  | Platform.Windows -> (
+      match
+        ( first_stdout_line (run "opam" [ "var"; "root" ]),
+          first_stdout_line (run "opam" [ "var"; "bin" ]) )
+      with
+      | Some root, Some switch_bin ->
+          let probe = doctor_plugin_probe ~run ~root ~switch_bin in
+          let plugin =
+            doctor_plugin_diagnostic_from_probe ~root ~switch_bin probe
+          in
+          let symlink =
+            match first_stdout_line probe with
+            | Some "absent" -> []
+            | _ -> windows_symlink_diagnostics ~run os
+          in
+          let runtime_path =
+            match first_stdout_line probe with
+            | Some "absent" -> []
+            | _ -> windows_runtime_path_diagnostics ~run ~root os
+          in
+          plugin @ symlink @ runtime_path
+      | _ -> [])
+  | _ -> []
+
 let diagnostics ~(run : Process.runner) os =
   if opam_available ~run then
     let package_state = read_package_state ~run in
     [ initialized_diagnostic ~run ]
     @ switch_diagnostics ~run os
     @ env_sync_diagnostic ~run os package_state
+    @ doctor_plugin_diagnostics ~run os
     @ package_diagnostics package_state
   else
     [

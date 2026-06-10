@@ -65,3 +65,32 @@ for the same diagnostics. The `diagnostics[].name` values are intended to be
 stable enough for scripts. Human-readable messages and details should still be
 treated as display text; tools should prefer `name`, `status`, and
 `summary.exit_code` for branching.
+
+## Diagnostic names
+
+| Name | Meaning |
+| --- | --- |
+| `platform.os` | Detected platform. |
+| `command.opam` | `opam` command availability and version. |
+| `command.ocaml` | `ocaml` command availability and version. |
+| `command.dune` | `dune` command availability and version. |
+| `command.ocaml-lsp-server` | OCaml LSP command availability and version. |
+| `command.ocamlformat` | `ocamlformat` command availability and version. |
+| `opam.initialized` | Whether opam appears initialized. |
+| `opam.switch.active` | Active opam switch state. |
+| `opam.switch.list` | Available opam switches. |
+| `opam.env.sync` | Whether visible switch tools match the active switch. |
+| `opam.plugin.doctor` | Windows opam plugin dispatch state for `opam doctor`. |
+| `opam.windows.symlink` | Windows user symlink support for opam plugin entries. |
+| `opam.windows.runtime-path` | Windows runtime PATH state for opam plugin dispatch. |
+| `env.path.current-directory` | Current-directory entries in `PATH`. |
+| `env.color.forced` | Forced color-output environment variables. |
+| `env.grep-options` | `GREP_OPTIONS` environment variable state. |
+| `opam.package.dune` | Installed `dune` package state. |
+| `opam.package.ocaml-lsp-server` | Installed `ocaml-lsp-server` package state. |
+| `opam.package.ocamlformat` | Installed `ocamlformat` package state. |
+| `opam.package.utop` | Installed optional `utop` package state. |
+| `opam.packages` | Failure to read installed opam packages. |
+| `editor.vscode.command` | VS Code command availability. |
+| `editor.vscode.ocaml-platform` | VS Code OCaml Platform extension state. |
+| `editor.vscode.extensions` | Failure to read VS Code extensions. |
