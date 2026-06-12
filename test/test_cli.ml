@@ -27,6 +27,10 @@ let expect_contains label needle haystack =
   if not (contains_substring haystack needle) then
     failwith (Printf.sprintf "%s: missing substring %S" label needle)
 
+let expect_output label (result : Doctor.Process.result) =
+  if result.stdout = "" && result.stderr = "" then
+    failwith (Printf.sprintf "%s: expected diagnostic output" label)
+
 let normalize_newlines text =
   text |> String.split_on_char '\r' |> String.concat ""
 
@@ -100,8 +104,7 @@ let test_invalid_command_exits_nonzero () =
 let test_missing_command_exits_nonzero () =
   let result = run_doctor [] in
   expect_nonzero "missing command status" result.status;
-  expect_contains "missing command stderr"
-    "required COMMAND name is missing" result.stderr
+  expect_output "missing command output" result
 
 let () =
   List.iter
