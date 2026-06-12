@@ -65,21 +65,21 @@ let test_version_command_prints_current_version () =
     (normalize_newlines result.stdout)
 
 let test_help_exits_successfully () =
-  let result = run_doctor [ "--help" ] in
+  let result = run_doctor [ "--help=plain" ] in
   expect_status "help command status" (Doctor.Process.Exited 0)
     result.status;
   expect_contains "help output"
     "Run OCaml development environment diagnostics" result.stdout
 
 let test_check_help_mentions_json () =
-  let result = run_doctor [ "check"; "--help" ] in
+  let result = run_doctor [ "check"; "--help=plain" ] in
   expect_status "check help command status" (Doctor.Process.Exited 0)
     result.status;
   expect_contains "check help output mentions json" "--json"
     result.stdout
 
 let test_opam_doctor_help_uses_plugin_binary_name () =
-  let result = run_opam_doctor [ "--help" ] in
+  let result = run_opam_doctor [ "--help=plain" ] in
   expect_status "opam-doctor help status" (Doctor.Process.Exited 0)
     result.status;
   expect_contains "opam-doctor help name" "opam-doctor" result.stdout;
